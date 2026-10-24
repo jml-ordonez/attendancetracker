@@ -1,0 +1,27 @@
+import { createClient } from "@supabase/supabase-js";
+
+/**
+ * Privileged Service-Role Supabase Client
+ * 
+ * STRICT SECURITY CONSTRAINTS:
+ * 1. This client must NEVER be exposed or imported into any client component or browser bundle.
+ * 2. It is exclusively utilized by trusted Next.js Server Actions and Route Handlers for
+ *    atomic scan verification, single-use token consumption, and role management.
+ */
+export function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "[Supabase Admin Error] Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables."
+    );
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}

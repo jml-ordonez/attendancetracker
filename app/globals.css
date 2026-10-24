@@ -1,0 +1,332 @@
+@import "tailwindcss";
+
+/*
+  Design tokens: blue and white.
+  White surfaces on a pale blue-white ground, deep navy ink, one blue that
+  carries the brand, the primary action and the main data series.
+  Status colours are reserved for meaning (on time, late, left early, rejected).
+*/
+@theme inline {
+  --color-paper: #f4f7fc;
+  --color-card: #ffffff;
+  --color-ink: #0b1b36;
+  --color-ink-soft: #33415c;
+  --color-muted: #586a86;
+  --color-line: #e2e8f2;
+  --color-line-strong: #c8d3e4;
+
+  --color-brand: #1d4ed8;
+  --color-brand-dark: #1a3fae;
+  --color-brand-deep: #0e2a6b;
+  --color-brand-soft: #e6eefc;
+  --color-brand-tint: #f1f5fe;
+  --color-brand-light: #9dbaf5;
+
+  --color-pine: #166534;
+  --color-pine-soft: #e3f4e8;
+  --color-brass: #8a4b06;
+  --color-brass-soft: #fcf0d9;
+  --color-rose: #b42318;
+  --color-rose-soft: #fdeceb;
+  --color-sky: #1e4f8f;
+  --color-sky-soft: #e4eefa;
+
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-plex-serif), Georgia, serif;
+
+  --ease-out-soft: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "kern";
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-brand);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+button:not(:disabled),
+[role="button"],
+summary,
+label[for],
+select {
+  cursor: pointer;
+}
+
+/* Figures that line up: times, IDs, counts. */
+.figures {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* ---------- Motion ----------
+   Transform and opacity only. Every move has a reduced-motion fallback below
+   that keeps the content and drops the travel. */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.01);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes row-new {
+  from {
+    background-color: var(--color-brand-soft);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@keyframes live {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@keyframes sweep {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes ken-burns {
+  from {
+    transform: scale(1.14) translate3d(-1.5%, 1%, 0);
+  }
+  to {
+    transform: scale(1.02) translate3d(1%, -1%, 0);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(-1deg);
+  }
+}
+
+@keyframes countdown {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: 50.3;
+  }
+}
+
+/* The check-in toast: arrives late in each pass cycle, holds, then leaves. */
+@keyframes toast {
+  0%,
+  45% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.94);
+  }
+  58%,
+  88% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.animate-ken-burns {
+  animation: ken-burns 24s ease-in-out infinite alternate;
+}
+
+.animate-float {
+  animation: float 7s ease-in-out infinite;
+}
+
+.animate-countdown {
+  animation: countdown linear both;
+}
+
+.animate-toast {
+  animation: toast 3.6s ease-out both;
+}
+
+/* Cards that respond to the pointer. */
+.lift {
+  transition:
+    transform 220ms var(--ease-out-soft),
+    box-shadow 220ms var(--ease-out-soft),
+    border-color 220ms ease-out;
+}
+@media (hover: hover) {
+  .lift:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 18px 40px -22px rgba(14, 42, 107, 0.45);
+  }
+}
+
+/* Staggered entrance: set --i on each child (0, 1, 2…). */
+.animate-rise {
+  animation: rise 0.55s var(--ease-out-soft) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+
+.animate-sheet-in {
+  animation: sheet-in 0.24s var(--ease-out-soft) both;
+}
+
+.animate-fade {
+  animation: fade-in 0.3s ease-out both;
+}
+
+.animate-grow-x {
+  transform-origin: left center;
+  animation: grow-x 0.8s var(--ease-out-soft) both;
+  animation-delay: calc(var(--i, 0) * 60ms + 120ms);
+}
+
+.animate-grow-y {
+  transform-origin: center bottom;
+  animation: grow-y 0.7s var(--ease-out-soft) both;
+  animation-delay: calc(var(--i, 0) * 25ms + 120ms);
+}
+
+.animate-pop {
+  animation: pop 0.38s var(--ease-out-soft) both;
+}
+
+.animate-row-new {
+  animation: row-new 2.4s ease-out both;
+}
+
+/* A live dot: the dot itself stays put; a ring expands behind it. */
+.live-dot {
+  position: relative;
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: currentColor;
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  animation: live 1.6s ease-out infinite;
+}
+
+/* The scanner's sweep line inside the viewfinder. */
+.scan-sweep {
+  animation: sweep 2.2s ease-in-out infinite alternate;
+}
+
+/* Pressed feedback on every button-like control. */
+.press {
+  transition:
+    transform 120ms ease-out,
+    background-color 160ms ease-out,
+    border-color 160ms ease-out,
+    color 160ms ease-out,
+    box-shadow 160ms ease-out;
+}
+.press:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .live-dot::after,
+  .scan-sweep,
+  .animate-ken-burns,
+  .animate-float {
+    animation: none !important;
+  }
+}
