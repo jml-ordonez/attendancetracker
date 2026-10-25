@@ -45,7 +45,7 @@ export default function LandingPage() {
   return (
     <div className="grid min-h-dvh bg-card lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
       {/* ---------- The room: photograph, title and the live pass ---------- */}
-      <section className="relative order-2 isolate flex flex-col overflow-hidden bg-brand-deep text-white lg:order-1 lg:min-h-dvh">
+      <section className="relative order-1 isolate flex flex-col overflow-hidden bg-brand-deep text-white lg:min-h-dvh">
         <Image
           src={auditorium}
           alt=""
@@ -58,8 +58,9 @@ export default function LandingPage() {
         <div className="absolute inset-0 -z-10 bg-[linear-gradient(100deg,rgba(14,42,107,0.96)_25%,rgba(14,42,107,0.7)_60%,rgba(14,42,107,0.35))]" aria-hidden="true" />
 
         <div className="flex flex-1 flex-col px-6 py-10 sm:px-10 lg:px-14 lg:py-12 xl:px-16">
-          <div className="hidden lg:block">
+          <div className="flex items-center justify-between gap-4">
             <BrandLockup inverted />
+            <p className="figures hidden whitespace-nowrap text-sm text-white/70 sm:block">AY 2026–2027 · 1st Semester</p>
           </div>
 
           <div className="flex flex-1 flex-col justify-center gap-14 py-4 lg:py-14 xl:flex-row xl:items-center xl:justify-between xl:gap-10">
@@ -93,11 +94,7 @@ export default function LandingPage() {
       </section>
 
       {/* ---------- Access ---------- */}
-      <main className="order-1 flex flex-col px-5 py-8 sm:px-10 lg:order-2 lg:px-14 lg:py-12 xl:px-20">
-        <div className="flex items-center justify-between gap-4">
-          <BrandLockup className="lg:invisible" />
-          <p className="figures hidden whitespace-nowrap text-sm text-muted sm:block">AY 2026–2027 · 1st Semester</p>
-        </div>
+      <main className="order-2 flex flex-col px-5 py-8 sm:px-10 lg:px-14 lg:py-12 xl:px-20">
 
         <div className="mx-auto flex w-full max-w-[27rem] flex-1 flex-col justify-center py-10">
           <h2 className="animate-rise font-display text-[2.25rem] font-semibold leading-[1.1] tracking-tight">Welcome</h2>

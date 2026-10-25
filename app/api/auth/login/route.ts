@@ -87,8 +87,12 @@ export async function POST(request: NextRequest) {
       }
     : null;
 
-  if (!identity && identifier.includes("@")) {
-    identity = await supabaseStaff(identifier, password);
+  if (!identity) {
+    if (identifier.includes("@")) {
+      identity = await supabaseStaff(identifier, password);
+    } else {
+      identity = await supabaseStaff(`${identifier}@ua.edu.ph`, password);
+    }
   }
 
   if (!identity) {

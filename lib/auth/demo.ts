@@ -13,11 +13,19 @@ export interface StaffAccount {
 
 export const ADMIN_USERS: StaffAccount[] = [
   {
-    username: "admin",
-    password: "masteradmin2526",
-    email: "admin@university.edu",
-    name: "Administrator",
-    title: "System Administrator",
+    username: process.env.ADMIN_USERNAME || "admin",
+    password: process.env.ADMIN_PASSWORD || "masteradmin2526",
+    email: process.env.ADMIN_EMAIL || "admin@ua.edu.ph",
+    name: "System Administrator",
+    title: "Administrator",
+    role: "administrator",
+  },
+  {
+    username: "admin@ua.edu.ph",
+    password: process.env.ADMIN_PASSWORD || "masteradmin2526",
+    email: "admin@ua.edu.ph",
+    name: "System Administrator",
+    title: "Administrator",
     role: "administrator",
   },
   {
