@@ -8,13 +8,12 @@ import { Field, SelectField } from "@/components/ui/Field";
 import { btn } from "@/components/ui/styles";
 import { getRegisteredStudent, registerStudent } from "@/lib/auth/session";
 import {
-  EMAIL_PATTERN,
-  MAJORS,
   NAME_PATTERN,
   SECTION_PATTERN,
   STUDENT_ID_PATTERN,
+  UA_EMAIL_PATTERN,
   YEAR_LEVELS,
-  sectionMatchesMajor,
+  deriveMajorFromSection,
   sectionMatchesYear,
 } from "@/lib/validation";
 
@@ -26,9 +25,11 @@ interface StudentRegisterModalProps {
   goToPass?: boolean;
 }
 
-function suggestSection(majorCode: string, yearLevel: string): string {
+function suggestSection(yearLevel: string, currentSec = "MM-1A"): string {
   const year = Math.max(1, YEAR_LEVELS.indexOf(yearLevel as (typeof YEAR_LEVELS)[number]) + 1);
-  return `BA-${majorCode.replace("BSBA-", "")} ${year}-1`;
+  const prefix = currentSec.match(/^(?:BA-)?([A-Z]+)/)?.[1] || "MM";
+  const suffix = currentSec.match(/[A-Z0-9]$/)?.[0] || "A";
+  return `${prefix}-${year}${suffix}`;
 }
 
 type Errors = Partial<Record<"firstName" | "lastName" | "studentIdNumber" | "email" | "section" | "form", string>>;
@@ -39,9 +40,8 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
   const [lastName, setLastName] = useState("");
   const [studentIdNumber, setStudentIdNumber] = useState("");
   const [email, setEmail] = useState("");
-  const [majorCode, setMajorCode] = useState("BSBA-MM");
   const [yearLevel, setYearLevel] = useState<string>("1st Year");
-  const [section, setSection] = useState("BA-MM 1-1");
+  const [section, setSection] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -57,7 +57,6 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
       setLastName(existing.lastName);
       setStudentIdNumber(existing.studentIdNumber);
       setEmail(existing.email);
-      setMajorCode(existing.majorCode);
       setYearLevel(existing.yearLevel);
       setSection(existing.section);
     }
@@ -79,7 +78,7 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
     const first = firstName.trim();
     const last = lastName.trim();
     const sid = studentIdNumber.trim().toUpperCase();
-    const mail = email.trim();
+    const mail = email.trim().toLowerCase();
     const sec = section.trim().toUpperCase();
 
     if (!first) errs.firstName = "Enter your first name.";
@@ -89,16 +88,20 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
     else if (last.length > 40 || !NAME_PATTERN.test(last)) errs.lastName = "Use letters only (spaces, hyphens and apostrophes allowed).";
 
     if (!sid) errs.studentIdNumber = "Enter your student ID number.";
-    else if (!STUDENT_ID_PATTERN.test(sid)) errs.studentIdNumber = "Use the format YYYY-NNNNN-BA, for example 2024-01492-BA.";
-    else if (Number(sid.slice(0, 4)) < 2000 || Number(sid.slice(0, 4)) > new Date().getFullYear())
-      errs.studentIdNumber = "The year at the start of your ID isn't valid.";
+    else if (!STUDENT_ID_PATTERN.test(sid)) errs.studentIdNumber = "Use the format e.g 2022001234.";
+    else {
+      const digits = sid.replace(/\D/g, "");
+      const year = Number(digits.slice(0, 4));
+      if (year < 2000 || year > new Date().getFullYear()) {
+        errs.studentIdNumber = "The year at the start of your ID isn't valid.";
+      }
+    }
 
     if (!mail) errs.email = "Enter your university email.";
-    else if (!EMAIL_PATTERN.test(mail)) errs.email = "Enter a valid email address, such as name@university.edu.";
+    else if (!UA_EMAIL_PATTERN.test(mail)) errs.email = "Enter a valid university email ending with @ua.edu.ph.";
 
     if (!sec) errs.section = "Enter your section.";
-    else if (!SECTION_PATTERN.test(sec)) errs.section = "Use the format BA-MM 3-1 (program, year-section).";
-    else if (!sectionMatchesMajor(sec, majorCode)) errs.section = `Your major is ${majorCode.replace("BSBA-", "")}, so the section starts with BA-${majorCode.replace("BSBA-", "")}.`;
+    else if (!SECTION_PATTERN.test(sec)) errs.section = "Use the format MM-1A (program, year and section).";
     else if (!sectionMatchesYear(sec, yearLevel)) errs.section = `The year in your section doesn't match ${yearLevel}.`;
 
     return errs;
@@ -117,14 +120,19 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
 
     setIsSubmitting(true);
     try {
+      const sid = studentIdNumber.trim().toUpperCase();
+      const mail = email.trim().toLowerCase();
+      const sec = section.trim().toUpperCase();
+      const derivedMajor = deriveMajorFromSection(sec);
+
       registerStudent({
         firstName: firstName.trim().replace(/\s+/g, " "),
         lastName: lastName.trim().replace(/\s+/g, " "),
-        studentIdNumber: studentIdNumber.trim().toUpperCase(),
-        email: email.trim().toLowerCase(),
-        majorCode,
+        studentIdNumber: sid,
+        email: mail,
+        majorCode: derivedMajor,
         yearLevel,
-        section: section.trim().toUpperCase(),
+        section: sec,
       });
       onSuccess?.();
       onClose();
@@ -162,8 +170,8 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
             required
             autoComplete="off"
             autoCapitalize="characters"
-            placeholder="2024-01492-BA"
-            maxLength={13}
+            placeholder="e.g 2022001234"
+            maxLength={15}
             value={studentIdNumber}
             error={errors.studentIdNumber}
             hint="Printed on your university ID."
@@ -178,9 +186,10 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
             type="email"
             autoComplete="email"
             inputMode="email"
-            placeholder="name@university.edu"
+            placeholder="name@ua.edu.ph"
             value={email}
             error={errors.email}
+            hint="Must end with @ua.edu.ph"
             onChange={(e) => {
               setEmail(e.target.value);
               clear("email");
@@ -188,29 +197,15 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
           />
         </div>
 
-        <fieldset className="grid gap-4 rounded-xl bg-paper p-4 sm:grid-cols-3">
-          <legend className="sr-only">Program</legend>
-          <SelectField
-            label="Major"
-            value={majorCode}
-            onChange={(e) => {
-              setMajorCode(e.target.value);
-              setSection(suggestSection(e.target.value, yearLevel));
-              clear("section");
-            }}
-          >
-            {Object.entries(MAJORS).map(([code, name]) => (
-              <option key={code} value={code}>
-                {name.replace("BSBA in ", "")}
-              </option>
-            ))}
-          </SelectField>
+        <fieldset className="grid gap-4 rounded-xl bg-paper p-4 sm:grid-cols-2">
+          <legend className="sr-only">Academic details</legend>
           <SelectField
             label="Year level"
             value={yearLevel}
             onChange={(e) => {
-              setYearLevel(e.target.value);
-              setSection(suggestSection(majorCode, e.target.value));
+              const newYear = e.target.value;
+              setYearLevel(newYear);
+              setSection((prev) => (prev ? suggestSection(newYear, prev) : ""));
               clear("section");
             }}
           >
@@ -224,12 +219,21 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
             label="Section"
             required
             autoComplete="off"
-            maxLength={12}
+            placeholder="e.g MM-1A"
+            maxLength={10}
             value={section}
             error={errors.section}
             onChange={(e) => {
-              setSection(e.target.value.toUpperCase());
+              const val = e.target.value.toUpperCase();
+              setSection(val);
               clear("section");
+              const match = val.match(/^[A-Z]+-([1-4])/);
+              if (match) {
+                const yrNum = Number(match[1]);
+                if (yrNum >= 1 && yrNum <= 4) {
+                  setYearLevel(YEAR_LEVELS[yrNum - 1]);
+                }
+              }
             }}
           />
         </fieldset>
@@ -251,3 +255,4 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
     </Modal>
   );
 }
+

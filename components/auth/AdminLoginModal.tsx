@@ -8,7 +8,6 @@ import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { btn } from "@/components/ui/styles";
 import { DEMO_ADMIN } from "@/lib/auth/demo";
-import { EMAIL_PATTERN } from "@/lib/validation";
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -19,9 +18,9 @@ interface AdminLoginModalProps {
 
 export default function AdminLoginModal({ isOpen, onClose, next }: AdminLoginModalProps) {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ username?: string; password?: string }>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [capsLock, setCapsLock] = useState(false);
@@ -57,8 +56,7 @@ export default function AdminLoginModal({ isOpen, onClose, next }: AdminLoginMod
     setFormError(null);
 
     const errs: typeof fieldErrors = {};
-    if (!email.trim()) errs.email = "Enter your staff email.";
-    else if (!EMAIL_PATTERN.test(email.trim())) errs.email = "Enter a valid email address, such as name@university.edu.";
+    if (!username.trim()) errs.username = "Enter your username.";
     if (!password) errs.password = "Enter your password.";
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) return;
@@ -68,7 +66,7 @@ export default function AdminLoginModal({ isOpen, onClose, next }: AdminLoginMod
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password }),
+        body: JSON.stringify({ username: username.trim(), password }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -78,7 +76,7 @@ export default function AdminLoginModal({ isOpen, onClose, next }: AdminLoginMod
         return;
       }
       // Close before leaving: Next keeps this page alive, and Back should not reopen the dialog.
-      setEmail("");
+      setUsername("");
       reset();
       onClose();
       router.replace(destination);
@@ -89,7 +87,7 @@ export default function AdminLoginModal({ isOpen, onClose, next }: AdminLoginMod
   };
 
   return (
-    <Modal open={isOpen} onClose={close} size="sm" title="Staff sign in" description="For department chairs, event coordinators and door officers.">
+    <Modal open={isOpen} onClose={close} size="sm" title="Admin sign in" description="For administrators, department chairs and event coordinators.">
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         {formError && (
           <p role="alert" className="rounded-lg bg-rose-soft px-3 py-2.5 text-sm font-medium text-rose">
@@ -98,17 +96,15 @@ export default function AdminLoginModal({ isOpen, onClose, next }: AdminLoginMod
         )}
 
         <Field
-          label="Staff email"
+          label="Username"
           required
-          type="email"
+          type="text"
           autoComplete="username"
-          inputMode="email"
-          placeholder="name@university.edu"
-          value={email}
-          error={fieldErrors.email}
+          value={username}
+          error={fieldErrors.username}
           onChange={(e) => {
-            setEmail(e.target.value);
-            setFieldErrors((p) => ({ ...p, email: undefined }));
+            setUsername(e.target.value);
+            setFieldErrors((p) => ({ ...p, username: undefined }));
           }}
         />
         <div>
@@ -149,12 +145,12 @@ export default function AdminLoginModal({ isOpen, onClose, next }: AdminLoginMod
 
         <div className="flex items-center justify-between gap-3 rounded-lg bg-brand-tint px-3.5 py-3 text-sm">
           <p className="min-w-0 text-ink-soft">
-            Demo account: <span className="font-medium text-ink">{DEMO_ADMIN.email}</span> · <span className="font-medium text-ink">{DEMO_ADMIN.password}</span>
+            Admin account: <span className="font-medium text-ink">{DEMO_ADMIN.username}</span> · <span className="font-medium text-ink">{DEMO_ADMIN.password}</span>
           </p>
           <button
             type="button"
             onClick={() => {
-              setEmail(DEMO_ADMIN.email);
+              setUsername(DEMO_ADMIN.username);
               setPassword(DEMO_ADMIN.password);
               setFieldErrors({});
             }}
@@ -167,3 +163,4 @@ export default function AdminLoginModal({ isOpen, onClose, next }: AdminLoginMod
     </Modal>
   );
 }
+

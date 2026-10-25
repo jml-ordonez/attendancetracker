@@ -1,17 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
-import { DEMO_ADMIN } from "@/lib/auth/demo";
+import { ADMIN_USERS, DEMO_ADMIN } from "@/lib/auth/demo";
 import { ADMIN_COOKIE, createSessionToken, sessionCookieOptions, type AdminIdentity } from "@/lib/auth/admin-session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAudit } from "@/lib/audit/store";
 import { clientIp, jsonError, parseBody } from "@/lib/http";
-import { EMAIL_PATTERN } from "@/lib/validation";
 
-const schema = z.object({
-  email: z.string().trim().toLowerCase().regex(EMAIL_PATTERN, "Enter a valid email address."),
-  password: z.string().min(1, "Enter your password.").max(200),
-});
+const schema = z
+  .object({
+    username: z.string().trim().min(1, "Enter your username.").max(200).optional(),
+    email: z.string().trim().optional(),
+    password: z.string().min(1, "Enter your password.").max(200),
+  })
+  .refine((data) => Boolean(data.username || data.email), {
+    message: "Enter your username.",
+    path: ["username"],
+  });
 
 const MAX_FAILURES = 5;
 const LOCKOUT_MS = 10 * 60 * 1000;
@@ -62,29 +67,44 @@ export async function POST(request: NextRequest) {
 
   const parsed = await parseBody(request, schema);
   if ("response" in parsed) return parsed.response;
-  const { email, password } = parsed.data;
+  const identifier = (parsed.data.username || parsed.data.email || "").trim();
+  const { password } = parsed.data;
 
-  // Demo account first: no network round trip.
-  let identity: AdminIdentity | null =
-    email === DEMO_ADMIN.email && password === DEMO_ADMIN.password
-      ? { email, name: DEMO_ADMIN.name, title: DEMO_ADMIN.title, role: "administrator" }
-      : null;
-  if (!identity) identity = await supabaseStaff(email, password);
+  // Configured admin accounts first (no network round trip)
+  const normalizedId = identifier.toLowerCase();
+  const matchedUser = ADMIN_USERS.find(
+    (u) =>
+      (u.username.toLowerCase() === normalizedId || u.email.toLowerCase() === normalizedId) &&
+      u.password === password
+  );
+
+  let identity: AdminIdentity | null = matchedUser
+    ? {
+        email: matchedUser.email,
+        name: matchedUser.name,
+        title: matchedUser.title,
+        role: matchedUser.role,
+      }
+    : null;
+
+  if (!identity && identifier.includes("@")) {
+    identity = await supabaseStaff(identifier, password);
+  }
 
   if (!identity) {
     const next = record && record.until > Date.now() ? record.count + 1 : 1;
     failures.set(ip, { count: next, until: Date.now() + LOCKOUT_MS });
     logAudit({
-      actor: email,
-      actorEmail: email,
+      actor: identifier,
+      actorEmail: identifier.includes("@") ? identifier : `${identifier}@local`,
       category: "auth",
       action: "auth.sign_in_failed",
-      summary: "Failed staff sign-in (wrong email or password)",
+      summary: "Failed staff sign-in (wrong username or password)",
       outcome: "failure",
       ip,
       details: { attempt: next },
     });
-    return jsonError("Email or password is incorrect.", 401);
+    return jsonError("Username or password is incorrect.", 401);
   }
 
   failures.delete(ip);

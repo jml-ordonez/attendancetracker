@@ -3,7 +3,14 @@ import { recordAttendance } from "../lib/attendance/record";
 import { clearScans, listScans } from "../lib/attendance/store";
 import { buildRoll } from "../lib/attendance/roll";
 import { createSessionToken, verifySessionToken } from "../lib/auth/admin-session";
-import { sectionMatchesMajor, sectionMatchesYear } from "../lib/validation";
+import { ADMIN_USERS, DEMO_ADMIN } from "../lib/auth/demo";
+import {
+  STUDENT_ID_PATTERN,
+  UA_EMAIL_PATTERN,
+  deriveMajorFromSection,
+  sectionMatchesMajor,
+  sectionMatchesYear,
+} from "../lib/validation";
 
 // Seeded "Morning keynote": check-in 08:00–09:00 (UTC+8), 15 min grace, check-out 12:00–13:00.
 const EVENT = "a2b4c6d8-1111-2222-3333-444455556666";
@@ -84,11 +91,56 @@ describe("Staff session cookie", () => {
   });
 });
 
+describe("Admin credentials", () => {
+  it("includes admin user with masteradmin2526 password", () => {
+    const adminUser = ADMIN_USERS.find((u) => u.username === "admin");
+    expect(adminUser).toBeDefined();
+    expect(adminUser?.password).toBe("masteradmin2526");
+    expect(adminUser?.role).toBe("administrator");
+  });
+
+  it("sets DEMO_ADMIN default to the admin account", () => {
+    expect(DEMO_ADMIN.username).toBe("admin");
+    expect(DEMO_ADMIN.password).toBe("masteradmin2526");
+  });
+});
+
 describe("Section validation", () => {
   it("matches the section to the major and year", () => {
     expect(sectionMatchesMajor("BA-FM 2-1", "BSBA-FM")).toBe(true);
     expect(sectionMatchesMajor("BA-MM 2-1", "BSBA-FM")).toBe(false);
     expect(sectionMatchesYear("BA-FM 2-1", "2nd Year")).toBe(true);
     expect(sectionMatchesYear("BA-FM 3-1", "2nd Year")).toBe(false);
+
+    // MM-1A format
+    expect(sectionMatchesMajor("MM-1A", "BSBA-MM")).toBe(true);
+    expect(sectionMatchesMajor("MM-1A", "BSBA-FM")).toBe(false);
+    expect(sectionMatchesYear("MM-1A", "1st Year")).toBe(true);
+    expect(sectionMatchesYear("MM-1A", "2nd Year")).toBe(false);
+    expect(sectionMatchesMajor("FM-2B", "BSBA-FM")).toBe(true);
+    expect(sectionMatchesYear("FM-2B", "2nd Year")).toBe(true);
+  });
+
+  it("derives the major from the section", () => {
+    expect(deriveMajorFromSection("MM-1A")).toBe("BSBA-MM");
+    expect(deriveMajorFromSection("FM-2B")).toBe("BSBA-FM");
+    expect(deriveMajorFromSection("HRM-3A")).toBe("BSBA-HRM");
+    expect(deriveMajorFromSection("OM-4A")).toBe("BSBA-OM");
+  });
+});
+
+describe("Student registration validation", () => {
+  it("validates 10-digit student ID format e.g 2022001234", () => {
+    expect(STUDENT_ID_PATTERN.test("2022001234")).toBe(true);
+    expect(STUDENT_ID_PATTERN.test("2024-01492-BA")).toBe(true);
+    expect(STUDENT_ID_PATTERN.test("invalid")).toBe(false);
+    expect(STUDENT_ID_PATTERN.test("12345")).toBe(false);
+  });
+
+  it("validates university email ending with @ua.edu.ph", () => {
+    expect(UA_EMAIL_PATTERN.test("student@ua.edu.ph")).toBe(true);
+    expect(UA_EMAIL_PATTERN.test("2022001234@ua.edu.ph")).toBe(true);
+    expect(UA_EMAIL_PATTERN.test("student@university.edu")).toBe(false);
+    expect(UA_EMAIL_PATTERN.test("student@gmail.com")).toBe(false);
   });
 });

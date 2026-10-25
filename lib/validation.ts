@@ -21,9 +21,10 @@ export const MAJOR_SHORT: Record<string, string> = {
 
 export const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year", "4th Year"] as const;
 
-export const STUDENT_ID_PATTERN = /^\d{4}-\d{5}-BA$/;
+export const STUDENT_ID_PATTERN = /^(?:\d{10}|\d{4}-\d{5}-BA)$/;
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-export const SECTION_PATTERN = /^BA-(MM|FM|HRM|OM) [1-4]-[1-9]\d?$/;
+export const UA_EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@ua\.edu\.ph$/i;
+export const SECTION_PATTERN = /^(?:(MM|FM|HRM|OM)-[1-4][A-Z0-9]|BA-(MM|FM|HRM|OM) [1-4]-[1-9]\d?)$/i;
 export const NAME_PATTERN = /^[\p{L}][\p{L}\s'.-]*$/u;
 
 const MAJOR_CODES = Object.keys(MAJORS) as [string, ...string[]];
@@ -32,9 +33,10 @@ export const studentIdSchema = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(STUDENT_ID_PATTERN, "Use the format YYYY-NNNNN-BA, for example 2024-01492-BA.")
+  .regex(STUDENT_ID_PATTERN, "Use the format e.g 2022001234 (10-digit student ID).")
   .refine((v) => {
-    const year = Number(v.slice(0, 4));
+    const digits = v.replace(/\D/g, "");
+    const year = Number(digits.slice(0, 4));
     return year >= 2000 && year <= new Date().getFullYear();
   }, "The year at the start of the ID isn't valid.");
 
@@ -51,17 +53,29 @@ export const sectionSchema = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(SECTION_PATTERN, "Use the format BA-MM 3-1 (program, year-section).");
+  .regex(SECTION_PATTERN, "Use the format MM-1A (program, year and section).");
 
-/** The section's program must match the chosen major, e.g. BSBA-FM → BA-FM. */
-export function sectionMatchesMajor(section: string, majorCode: string): boolean {
-  return section.toUpperCase().startsWith(`BA-${majorCode.replace("BSBA-", "")} `);
+/** Derives the major program code from the section string (e.g. MM-1A -> BSBA-MM). */
+export function deriveMajorFromSection(section: string): string {
+  const sec = section.trim().toUpperCase();
+  const match = sec.match(/^(?:BA-)?(MM|FM|HRM|OM)/);
+  if (match) return `BSBA-${match[1]}`;
+  return "BSBA-MM";
 }
 
-/** The year digit in the section must match the year level, e.g. 3rd Year → BA-MM 3-1. */
+/** The section's program must match the chosen major, e.g. BSBA-FM -> FM-2A or BA-FM 2-1. */
+export function sectionMatchesMajor(section: string, majorCode: string): boolean {
+  const sec = section.trim().toUpperCase();
+  const code = majorCode.replace("BSBA-", "").toUpperCase();
+  return sec.startsWith(`${code}-`) || sec.startsWith(`BA-${code} `) || sec.startsWith(`BA-${code}-`);
+}
+
+/** The year digit in the section must match the year level, e.g. 1st Year -> MM-1A. */
 export function sectionMatchesYear(section: string, yearLevel: string): boolean {
   const year = YEAR_LEVELS.indexOf(yearLevel as (typeof YEAR_LEVELS)[number]) + 1;
-  return year > 0 && new RegExp(`^BA-[A-Z]+ ${year}-`).test(section.toUpperCase());
+  if (year <= 0) return false;
+  const sec = section.trim().toUpperCase();
+  return new RegExp(`^(?:[A-Z]+-${year}[A-Z0-9]|BA-[A-Z]+ ${year}-)`).test(sec);
 }
 
 export const purposeSchema = z.enum(["time_in", "time_out"], { message: "Choose check-in or check-out." });

@@ -45,14 +45,14 @@ export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionL
     const e: Errors = {};
     const id = form.studentIdNumber.trim().toUpperCase();
     if (!id) e.studentIdNumber = "Enter the student ID number.";
-    else if (!STUDENT_ID_PATTERN.test(id)) e.studentIdNumber = "Use the format YYYY-NNNNN-BA, for example 2024-01492-BA.";
+    else if (!STUDENT_ID_PATTERN.test(id)) e.studentIdNumber = "Use the format e.g 2022001234.";
     if (isIn) {
       const name = form.studentName.trim();
       if (name.length < 2) e.studentName = "Enter the student's full name as printed on their ID.";
       else if (!NAME_PATTERN.test(name)) e.studentName = "Use letters only (spaces, hyphens and apostrophes allowed).";
       const sec = form.section.trim().toUpperCase();
       if (!sec) e.section = "Enter the section.";
-      else if (!SECTION_PATTERN.test(sec)) e.section = "Use the format BA-MM 3-1.";
+      else if (!SECTION_PATTERN.test(sec)) e.section = "Use the format MM-1A.";
       else if (!sectionMatchesMajor(sec, form.majorCode)) e.section = "This section belongs to a different program.";
     }
     if (form.reason.trim().length < 10) e.reason = "Describe why the pass couldn't be scanned (at least 10 characters).";
@@ -111,8 +111,8 @@ export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionL
           label="Student ID number"
           required
           autoComplete="off"
-          placeholder="2024-01492-BA"
-          maxLength={13}
+          placeholder="e.g 2022001234"
+          maxLength={15}
           value={form.studentIdNumber}
           error={errors.studentIdNumber}
           hint={isIn ? "Check it against the student's university ID card." : "The student must already be checked in to this session."}
@@ -142,8 +142,8 @@ export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionL
                 label="Section"
                 required
                 autoComplete="off"
-                placeholder={`BA-${form.majorCode.replace("BSBA-", "")} 3-1`}
-                maxLength={12}
+                placeholder="e.g MM-1A"
+                maxLength={10}
                 value={form.section}
                 error={errors.section}
                 onChange={(e) => set("section", e.target.value.toUpperCase())}
