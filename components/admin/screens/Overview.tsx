@@ -15,8 +15,6 @@ import { cn } from "@/lib/utils";
 import type { AuditEntry } from "@/lib/audit/store";
 import type { AttendanceScan } from "@/types/attendance";
 
-const PROGRAMS = ["BSBA-MM", "BSBA-FM", "BSBA-HRM", "BSBA-OM"] as const;
-
 export function OverviewScreen() {
   const { scans, events, loaded, updatedAt } = useAdminData();
   const [activity, setActivity] = useState<AuditEntry[] | null>(null);
@@ -104,21 +102,14 @@ export function OverviewScreen() {
           </dl>
         </section>
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <section className={cn(card, "animate-rise lg:col-span-2")} style={{ "--i": 3 } as React.CSSProperties} aria-labelledby="arrivals-h">
-            <PanelHeader
-              id="arrivals-h"
-              title="Arrivals by quarter hour"
-              description={current ? `${current.session.title} · check-ins against the grace period` : "Check-ins over time"}
-            />
-            <ArrivalsChart pick={current} scans={sessionScans} />
-          </section>
-
-          <section className={cn(card, "animate-rise")} style={{ "--i": 4 } as React.CSSProperties} aria-labelledby="programs-h">
-            <PanelHeader id="programs-h" title="Turnout by program" description="Check-ins today, by BSBA major" />
-            <ProgramMix scans={today} />
-          </section>
-        </div>
+        <section className={cn(card, "animate-rise")} style={{ "--i": 3 } as React.CSSProperties} aria-labelledby="arrivals-h">
+          <PanelHeader
+            id="arrivals-h"
+            title="Arrivals by quarter hour"
+            description={current ? `${current.session.title} · check-ins against the grace period` : "Check-ins over time"}
+          />
+          <ArrivalsChart pick={current} scans={sessionScans} />
+        </section>
 
         <div className="grid gap-6 lg:grid-cols-3">
           <section className={cn(card, "animate-rise lg:col-span-2")} style={{ "--i": 5 } as React.CSSProperties} aria-labelledby="recent-h">
@@ -365,35 +356,6 @@ function ArrivalsChart({ pick, scans }: { pick: SessionPick | null; scans: Atten
   );
 }
 
-function ProgramMix({ scans }: { scans: AttendanceScan[] }) {
-  const ins = scans.filter((s) => s.action === "time_in");
-  const counts = PROGRAMS.map((code) => ({ code, n: ins.filter((s) => s.majorCode === code).length }));
-  const max = Math.max(1, ...counts.map((c) => c.n));
-
-  return (
-    <div className="px-5 pb-6 pt-4 sm:px-6">
-      <ul className="space-y-4">
-        {counts.map((c, i) => (
-          <li key={c.code}>
-            <div className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="font-medium text-ink">{MAJOR_SHORT[c.code]} Management</span>
-              <span className="figures text-ink-soft">
-                <span className="font-semibold text-ink">{c.n}</span>
-                {ins.length > 0 && <span className="text-muted"> · {Math.round((c.n / ins.length) * 100)}%</span>}
-              </span>
-            </div>
-            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-paper">
-              <div className="animate-grow-x h-full rounded-full bg-brand" style={{ width: `${(c.n / max) * 100}%`, "--i": i } as React.CSSProperties} />
-            </div>
-          </li>
-        ))}
-      </ul>
-      <p className="figures mt-5 border-t border-line pt-4 text-sm text-ink-soft">
-        <span className="font-semibold text-ink">{ins.length}</span> check-ins across four majors
-      </p>
-    </div>
-  );
-}
 
 function RecentScans({ scans, loaded }: { scans: AttendanceScan[]; loaded: boolean }) {
   if (!loaded) return <div className="m-6 h-40 animate-pulse rounded-lg bg-paper" />;
