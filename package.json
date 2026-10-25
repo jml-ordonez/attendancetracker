@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "add-admin": "node scripts/add-admin.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

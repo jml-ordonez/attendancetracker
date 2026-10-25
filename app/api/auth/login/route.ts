@@ -92,6 +92,9 @@ export async function POST(request: NextRequest) {
       identity = await supabaseStaff(identifier, password);
     } else {
       identity = await supabaseStaff(`${identifier}@ua.edu.ph`, password);
+      if (!identity) identity = await supabaseStaff(`${identifier}.student@ua.edu.ph`, password);
+      if (!identity) identity = await supabaseStaff(`${identifier}@university.edu`, password);
+      if (!identity) identity = await supabaseStaff(`${identifier}@admin.com`, password);
     }
   }
 
