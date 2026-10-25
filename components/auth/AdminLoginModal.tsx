@@ -7,7 +7,6 @@ import { ArrowRight, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { btn } from "@/components/ui/styles";
-import { DEMO_ADMIN } from "@/lib/auth/demo";
 
 interface AdminLoginModalProps {
   isOpen: boolean;
@@ -142,23 +141,6 @@ export default function AdminLoginModal({ isOpen, onClose, next }: AdminLoginMod
             </>
           )}
         </button>
-
-        <div className="flex items-center justify-between gap-3 rounded-lg bg-brand-tint px-3.5 py-3 text-sm">
-          <p className="min-w-0 text-ink-soft">
-            Admin account: <span className="font-medium text-ink">{DEMO_ADMIN.username}</span> · <span className="font-medium text-ink">{DEMO_ADMIN.password}</span>
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setUsername(DEMO_ADMIN.username);
-              setPassword(DEMO_ADMIN.password);
-              setFieldErrors({});
-            }}
-            className="press shrink-0 rounded-md px-2 py-1 font-semibold text-brand hover:bg-brand-soft"
-          >
-            Fill in
-          </button>
-        </div>
       </form>
     </Modal>
   );

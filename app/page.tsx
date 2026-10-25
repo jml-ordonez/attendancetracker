@@ -15,13 +15,6 @@ import auditorium from "@/public/images/auditorium.jpg";
 
 type ModalKind = "register" | "admin" | null;
 
-/** Facts about how the system works, not marketing figures. */
-const FACTS = [
-  ["45s", "code rotation"],
-  ["1×", "scan per code"],
-  ["4", "BSBA majors"],
-] as const;
-
 const rise = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
 export default function LandingPage() {
@@ -58,9 +51,8 @@ export default function LandingPage() {
         <div className="absolute inset-0 -z-10 bg-[linear-gradient(100deg,rgba(14,42,107,0.96)_25%,rgba(14,42,107,0.7)_60%,rgba(14,42,107,0.35))]" aria-hidden="true" />
 
         <div className="flex flex-1 flex-col px-6 py-10 sm:px-10 lg:px-14 lg:py-12 xl:px-16">
-          <div className="flex items-center justify-between gap-4">
+          <div>
             <BrandLockup inverted />
-            <p className="figures hidden whitespace-nowrap text-sm text-white/70 sm:block">AY 2026–2027 · 1st Semester</p>
           </div>
 
           <div className="flex flex-1 flex-col justify-center gap-14 py-4 lg:py-14 xl:flex-row xl:items-center xl:justify-between xl:gap-10">
@@ -80,16 +72,6 @@ export default function LandingPage() {
               <PassPreview />
             </div>
           </div>
-
-          <dl className="grid grid-cols-3 gap-4 border-t border-white/15 pt-6">
-            {FACTS.map(([value, label], i) => (
-              <div key={label} className="animate-rise" style={rise(i + 4)}>
-                <dt className="sr-only">{label}</dt>
-                <dd className="figures font-display text-[1.875rem] font-semibold leading-none sm:text-[2.25rem]">{value}</dd>
-                <dd className="mt-1.5 text-sm text-white/70">{label}</dd>
-              </div>
-            ))}
-          </dl>
         </div>
       </section>
 
