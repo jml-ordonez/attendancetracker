@@ -53,7 +53,7 @@ export function PassPreview() {
           <div>
             <p className="text-[11px] font-medium text-white/65">Sample pass</p>
             <p className="font-display text-lg font-semibold leading-tight">Maria Santos</p>
-            <p className="figures text-xs text-white/75">2024-01492-BA · BA-MM 2-1</p>
+            <p className="figures text-xs text-white/75">2021003213 · MM-1A</p>
           </div>
           <BrandMark inverted className="h-9 w-9" />
         </div>

@@ -5,11 +5,14 @@ import { buildRoll } from "../lib/attendance/roll";
 import { createSessionToken, verifySessionToken } from "../lib/auth/admin-session";
 import { ADMIN_USERS, DEMO_ADMIN } from "../lib/auth/demo";
 import {
+  SECTION_PATTERN,
   STUDENT_ID_PATTERN,
   UA_EMAIL_PATTERN,
   deriveMajorFromSection,
   sectionMatchesMajor,
   sectionMatchesYear,
+  sectionSchema,
+  studentIdSchema,
 } from "../lib/validation";
 
 // Seeded "Morning keynote": check-in 08:00–09:00 (UTC+8), 15 min grace, check-out 12:00–13:00.
@@ -130,16 +133,26 @@ describe("Section validation", () => {
 });
 
 describe("Student registration validation", () => {
-  it("validates 10-digit student ID format e.g 2022001234", () => {
+  it("validates 10-digit student ID format including 2021003213 and 2022001234", () => {
+    expect(STUDENT_ID_PATTERN.test("2021003213")).toBe(true);
     expect(STUDENT_ID_PATTERN.test("2022001234")).toBe(true);
     expect(STUDENT_ID_PATTERN.test("2024-01492-BA")).toBe(true);
     expect(STUDENT_ID_PATTERN.test("invalid")).toBe(false);
     expect(STUDENT_ID_PATTERN.test("12345")).toBe(false);
+
+    expect(studentIdSchema.safeParse("2021003213").success).toBe(true);
+    expect(studentIdSchema.safeParse("2024-01492-BA").success).toBe(true);
+  });
+
+  it("validates MM-1A section format schema", () => {
+    expect(SECTION_PATTERN.test("MM-1A")).toBe(true);
+    expect(sectionSchema.safeParse("MM-1A").success).toBe(true);
+    expect(sectionSchema.safeParse("FM-2B").success).toBe(true);
   });
 
   it("validates university email ending with @ua.edu.ph", () => {
     expect(UA_EMAIL_PATTERN.test("student@ua.edu.ph")).toBe(true);
-    expect(UA_EMAIL_PATTERN.test("2022001234@ua.edu.ph")).toBe(true);
+    expect(UA_EMAIL_PATTERN.test("2021003213@ua.edu.ph")).toBe(true);
     expect(UA_EMAIL_PATTERN.test("student@university.edu")).toBe(false);
     expect(UA_EMAIL_PATTERN.test("student@gmail.com")).toBe(false);
   });
