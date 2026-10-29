@@ -36,3 +36,15 @@ export function pickSession(events: BAEvent[], now = new Date()): SessionPick | 
 export function graceEnds(session: EventSession): Date {
   return new Date(new Date(session.time_in_start).getTime() + session.grace_period_mins * 60000);
 }
+
+/** Published events a student can still register for: at least one session hasn't ended. Soonest first. */
+export function registrableEvents(events: BAEvent[], now = new Date()): BAEvent[] {
+  return events
+    .filter((e) => e.status === "published" && (e.sessions ?? []).some((s) => sessionState(s, now) !== "ended"))
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+}
+
+/** The sessions of one event that haven't ended, in time order. */
+export function liveSessionsOf(events: BAEvent[], eventId: string, now = new Date()): SessionPick[] {
+  return publishedSessions(events, now).filter((s) => s.event.id === eventId && s.state !== "ended");
+}

@@ -1,12 +1,15 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowRight, Loader2, RefreshCw } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Field, SelectField } from "@/components/ui/Field";
 import { btn } from "@/components/ui/styles";
 import { getRegisteredStudent, registerStudent } from "@/lib/auth/session";
+import { registrableEvents } from "@/lib/attendance/schedule";
+import { useEvents } from "@/lib/client/events";
+import { formatDay } from "@/lib/format";
 import {
   YEAR_LEVELS,
   deriveMajorFromSection,
@@ -42,18 +45,25 @@ function normalizeEmail(raw: string): string {
   return trimmed;
 }
 
-type FieldKey = "firstName" | "lastName" | "studentIdNumber" | "email" | "section";
+type FieldKey = "firstName" | "lastName" | "studentIdNumber" | "email" | "section" | "eventId";
 type Values = Record<FieldKey, string>;
 type Errors = Partial<Record<FieldKey | "form", string>>;
 
-/** Same rules as the pass API (see `studentRegistrationSchema`), after normalizing the ID and email. */
-function validateValues(vals: Values): Errors {
+/**
+ * Same rules as the pass API (see `studentRegistrationSchema`), after normalizing
+ * the ID and email. `openEventIds` is null while the event list is loading.
+ */
+function validateValues(vals: Values, openEventIds: Set<string> | null): Errors {
   const result = studentRegistrationSchema.safeParse({
     ...vals,
     studentIdNumber: normalizeStudentId(vals.studentIdNumber),
     email: normalizeEmail(vals.email),
   });
-  return result.success ? {} : fieldErrors(result.error);
+  const errs: Errors = result.success ? {} : fieldErrors(result.error);
+  if (!errs.eventId && openEventIds && !openEventIds.has(vals.eventId)) {
+    errs.eventId = "This event is no longer open for attendance. Choose another.";
+  }
+  return errs;
 }
 
 export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = true }: StudentRegisterModalProps) {
@@ -63,9 +73,16 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
   const [studentIdNumber, setStudentIdNumber] = useState("");
   const [email, setEmail] = useState("");
   const [section, setSection] = useState("");
+  const [eventId, setEventId] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
+
+  const { events, error: eventsError, reload: reloadEvents } = useEvents(isOpen);
+  const eventOptions = useMemo(() => (events ? registrableEvents(events) : null), [events]);
+  const openEventIds = useMemo(() => (eventOptions ? new Set(eventOptions.map((e) => e.id)) : null), [eventOptions]);
+  // With only one event open there is nothing to choose: select it.
+  const chosenEvent = eventId || (eventOptions?.length === 1 ? eventOptions[0].id : "");
 
   // Warm the student pass route while the person fills in their details.
   useEffect(() => {
@@ -81,6 +98,7 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
       setErrors({});
       const existing = getRegisteredStudent();
       setIsEdit(!!existing);
+      setEventId(existing?.eventId ?? "");
       if (existing) {
         setFirstName(existing.firstName);
         setLastName(existing.lastName);
@@ -111,7 +129,7 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
     setErrors((prev) => (prev[key] || prev.form ? { ...prev, [key]: undefined, form: undefined } : prev));
 
   const handleFieldBlur = (field: FieldKey, override?: Partial<Values>) => {
-    const errs = validateValues({ firstName, lastName, studentIdNumber, email, section, ...override });
+    const errs = validateValues({ firstName, lastName, studentIdNumber, email, section, eventId: chosenEvent, ...override }, openEventIds);
     setErrors((prev) => ({ ...prev, [field]: errs[field] }));
   };
 
@@ -126,7 +144,7 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
     if (sid !== studentIdNumber) setStudentIdNumber(sid);
     if (mail !== email) setEmail(mail);
 
-    const errs = validateValues({ firstName, lastName, studentIdNumber: sid, email: mail, section: sec });
+    const errs = validateValues({ firstName, lastName, studentIdNumber: sid, email: mail, section: sec, eventId: chosenEvent }, openEventIds);
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
       requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="dialog"] [aria-invalid="true"]')?.focus());
@@ -144,6 +162,7 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
         majorCode: deriveMajorFromSection(sec),
         yearLevel: yearLevelForSection(sec)!,
         section: sec,
+        eventId: chosenEvent,
       });
       onSuccess?.();
       if (goToPass) {
@@ -282,6 +301,48 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
               </button>
             )}
           </div>
+        </div>
+
+        <div>
+          <SelectField
+            label="Event"
+            name="eventId"
+            required
+            disabled={isSubmitting || !eventOptions?.length}
+            value={chosenEvent}
+            error={errors.eventId}
+            hint={
+              eventsError
+                ? undefined
+                : !eventOptions
+                  ? "Loading events…"
+                  : eventOptions.length === 0
+                    ? "No events are open for attendance right now. Check back when the department publishes one."
+                    : "Your pass is made for this event. You can change it later."
+            }
+            onChange={(e) => {
+              const next = e.target.value;
+              setEventId(next);
+              handleFieldBlur("eventId", { eventId: next });
+            }}
+          >
+            <option value="" disabled>
+              {!eventOptions ? "Loading events…" : eventOptions.length === 0 ? "No open events" : "Select the event you're attending"}
+            </option>
+            {eventOptions?.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.title} · {formatDay(ev.start_time)}
+              </option>
+            ))}
+          </SelectField>
+          {eventsError && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-rose" role="alert">
+              Couldn&apos;t load the events.
+              <button type="button" onClick={reloadEvents} className="press inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold underline-offset-2 hover:underline">
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Try again
+              </button>
+            </div>
+          )}
         </div>
 
         <SelectField

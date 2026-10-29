@@ -38,6 +38,9 @@ export async function POST(request: NextRequest) {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const sessionEndSec = Math.floor(new Date(found.session.time_out_end).getTime() / 1000);
+  if (sessionEndSec < nowSec) {
+    return jsonError("This event has ended. Choose another event.", 410);
+  }
   const expirySeconds = Math.max(sessionEndSec - nowSec, 0) + VALID_AFTER_SESSION_SECONDS;
 
   const token = generateStudentQRToken({

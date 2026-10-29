@@ -24,6 +24,15 @@ const READER_ID = "camera-reader";
  */
 const OUT_OF_VIEW_MS = 4000;
 
+/** A verify request that takes longer than this is abandoned so the line keeps moving. */
+const VERIFY_TIMEOUT_MS = 8000;
+
+/** How long the viewfinder frame stays green/amber/red after a result. */
+const FLASH_MS = 1200;
+
+/** html5-qrcode's Html5QrcodeScannerState values (the enum isn't importable without loading the library). */
+const SCANNER_STATE = { SCANNING: 2, PAUSED: 3 } as const;
+
 /** Passes are the compact format (V2:…) or the older base64url envelope (eyJ…). Anything else is not ours. */
 const PASS_PATTERN = /^(?:V2:[A-Z0-9]+:[A-Z2-7]+|eyJ[A-Za-z0-9_-]+)$/;
 
@@ -43,6 +52,9 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
   const [result, setResult] = useState<ScanVerificationResult | null>(null);
   const [processing, setProcessing] = useState(false);
   const [sound, setSound] = useState(true);
+  /** Colours the viewfinder frame so the result is visible without looking away from the pass. */
+  const [flash, setFlash] = useState<"ok" | "warn" | "fail" | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const transitioning = useRef(false);
@@ -75,6 +87,8 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
     try {
       const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ac = (audioRef.current ??= new Ctor());
+      // Created without a user gesture (the camera starts on its own), so it may start suspended.
+      if (ac.state === "suspended") void ac.resume();
       const osc = ac.createOscillator();
       const gain = ac.createGain();
       osc.connect(gain).connect(ac.destination);
@@ -110,22 +124,32 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
       for (const [t, at] of recent.current) if (seen - at > OUT_OF_VIEW_MS) recent.current.delete(t);
     }
 
+    const show = (r: ScanVerificationResult) => {
+      const tone = r.success ? (r.details?.isLate || r.details?.isEarlyDeparture ? "warn" : "ok") : "fail";
+      setResult(r);
+      setFlash(tone);
+      clearTimeout(flashTimer.current);
+      flashTimer.current = setTimeout(() => setFlash(null), FLASH_MS);
+      chime(r.success);
+      c.onScanned?.(r);
+    };
+
     let r: ScanVerificationResult;
     if (!PASS_PATTERN.test(token)) {
-      r = { success: false, status: "TOKEN_INVALID", message: "QR not recognized. This code isn’t a BA Attendance pass.", timestamp: now() };
-      setResult(r);
-      chime(false);
-      c.onScanned?.(r);
+      show({ success: false, status: "TOKEN_INVALID", message: "QR not recognized. This code isn’t a BA Attendance pass.", timestamp: now() });
       return;
     }
 
     busy.current = true;
     setProcessing(true);
+    // A short tick the moment a pass is read, before the server answers.
+    if ("vibrate" in navigator) navigator.vibrate(15);
     try {
       const res = await fetch("/api/qr/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, eventId: c.eventId, sessionId: c.sessionId }),
+        signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
       });
       if (res.status === 401) {
         window.location.assign(new URL(`/?auth=admin&next=${encodeURIComponent(window.location.pathname)}`, window.location.origin).href);
@@ -137,16 +161,24 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
         r = { success: false, status: "SERVER_ERROR", message: `Server error (${res.status}). Nothing was recorded; scan the pass again.`, timestamp: now() };
         recent.current.delete(token); // allow a retry
       } else r = { success: false, status: "TOKEN_INVALID", message: data.error ?? "Invalid QR. This code couldn’t be read as a pass.", timestamp: now() };
-    } catch {
-      r = { success: false, status: "SERVER_ERROR", message: "Network error. No connection to the server; check the network and scan again.", timestamp: now() };
+    } catch (err) {
+      const timedOut = err instanceof DOMException && err.name === "TimeoutError";
+      r = {
+        success: false,
+        status: "SERVER_ERROR",
+        message: timedOut
+          ? "The server took too long to answer. Nothing was recorded; scan the pass again."
+          : "Network error. No connection to the server; check the network and scan again.",
+        timestamp: now(),
+      };
       recent.current.delete(token); // allow a retry
     } finally {
       busy.current = false;
       setProcessing(false);
     }
-    setResult(r);
-    chime(r.success);
-    c.onScanned?.(r);
+    // Switched session while the request was in flight: the answer belongs to the old one.
+    if (ctx.current.sessionId !== c.sessionId) return;
+    show(r);
   };
   const verifyRef = useRef(verify);
   useEffect(() => {
@@ -174,7 +206,12 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
       await scannerRef.current.start(
         { facingMode: "environment" },
         {
-          fps: 12,
+          // More decode attempts per second: a pass is picked up as soon as it is steady in frame.
+          fps: 24,
+          // Matches the square viewfinder, so no pixels are captured only to be cropped away.
+          aspectRatio: 1,
+          // Passes are never mirrored; skipping the flipped retry halves the work on frames without a code.
+          disableFlip: true,
           qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.8); return { width: s, height: s }; },
           // A sharper rear-camera stream; "ideal" falls back quietly on cameras that can't.
           videoConstraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -224,6 +261,23 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
     setCamera("off");
   }, []);
 
+  // Pause decoding (and the video) in a background tab; resume instantly on return without restarting the camera.
+  useEffect(() => {
+    const onVisibility = () => {
+      const s = scannerRef.current;
+      if (!s) return;
+      try {
+        const state = s.getState() as number;
+        if (document.hidden && state === SCANNER_STATE.SCANNING) s.pause(true);
+        else if (!document.hidden && state === SCANNER_STATE.PAUSED) s.resume();
+      } catch {}
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+
   // Start on show, stop on hide (including when Next hides this route with Activity).
   useEffect(() => {
     mounted.current = true;
@@ -248,7 +302,19 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
           <div id={READER_ID} className="aspect-square w-full bg-black [&_#qr-shaded-region]:hidden [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
           {camera === "on" && (
             <div className="pointer-events-none absolute inset-[14%]" aria-hidden="true">
-              <div className="absolute inset-0 rounded-md border-2 border-white/80" />
+              <div
+                className={cn(
+                  "absolute inset-0 rounded-md border-2 transition-colors duration-150",
+                  flash === "ok" ? "border-emerald-400" : flash === "warn" ? "border-amber-400" : flash === "fail" ? "border-rose-400" : "border-white/80"
+                )}
+              />
+              {processing && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-sm font-medium text-white">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Checking pass…
+                  </span>
+                </div>
+              )}
               <div className="scan-sweep absolute inset-0">
                 <div className="mx-2 h-0.5 bg-brand shadow-[0_0_10px_1px_rgba(250,204,21,0.6)]" />
               </div>

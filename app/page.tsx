@@ -78,6 +78,7 @@ export default function LandingPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- network request; state changes only after it responds
     void checkAdminSession();
     const onVisibility = () => {
       if (!document.hidden) void checkAdminSession();

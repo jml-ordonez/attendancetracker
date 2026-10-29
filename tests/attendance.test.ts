@@ -18,7 +18,8 @@ import {
   studentRegistrationSchema,
   yearLevelForSection,
 } from "../lib/validation";
-import { addEvent, deleteEvent, getEvent } from "../lib/events/store";
+import { addEvent, deleteEvent, getEvent, listEvents } from "../lib/events/store";
+import { liveSessionsOf, registrableEvents } from "../lib/attendance/schedule";
 
 // Seeded "Morning keynote": check-in 08:00–09:00 (UTC+8), 15 min grace, check-out 12:00–13:00.
 const EVENT = "a2b4c6d8-1111-2222-3333-444455556666";
@@ -193,12 +194,12 @@ describe("Student registration validation", () => {
   });
 
   it("checks the whole registration form", () => {
-    const ok = { firstName: "Juan", lastName: "Dela Cruz", studentIdNumber: "2021003213", email: "juan@ua.edu.ph", section: "MM-3B" };
+    const ok = { firstName: "Juan", lastName: "Dela Cruz", studentIdNumber: "2021003213", email: "juan@ua.edu.ph", section: "MM-3B", eventId: "evt-1" };
     expect(studentRegistrationSchema.safeParse(ok).success).toBe(true);
-    const bad = studentRegistrationSchema.safeParse({ ...ok, firstName: "J4n", email: "juan@gmail.com", section: "" });
+    const bad = studentRegistrationSchema.safeParse({ ...ok, firstName: "J4n", email: "juan@gmail.com", section: "", eventId: " " });
     expect(bad.success).toBe(false);
     const paths = bad.error!.issues.map((i) => i.path[0]);
-    expect(paths).toEqual(expect.arrayContaining(["firstName", "email", "section"]));
+    expect(paths).toEqual(expect.arrayContaining(["firstName", "email", "section", "eventId"]));
   });
 
   it("validates university email ending with @ua.edu.ph", () => {
@@ -246,5 +247,21 @@ describe("New event validation", () => {
     expect(issue({ gracePeriodMins: Number.NaN })).toBe("gracePeriodMins");
     expect(issue({ gracePeriodMins: 200 })).toBe("gracePeriodMins");
     expect(issue({ gracePeriodMins: 7.5 })).toBe("gracePeriodMins");
+  });
+});
+
+describe("Events a student can register for", () => {
+  it("lists only published events with a session still to come", () => {
+    // Seed: Summit (Oct 24, published), Convention (Nov 5, published), Workshop (Nov 12, draft).
+    const ids = (at: string) => registrableEvents(listEvents(), new Date(at)).map((e) => e.title);
+    expect(ids("2026-10-20T00:00:00+08:00")).toEqual(["Annual BA Leadership Summit 2026", "Financial Analytics & FinTech Convention"]);
+    expect(ids("2026-10-25T00:00:00+08:00")).toEqual(["Financial Analytics & FinTech Convention"]);
+    expect(ids("2026-12-01T00:00:00+08:00")).toEqual([]);
+  });
+
+  it("returns the remaining sessions of the chosen event", () => {
+    const summit = "a2b4c6d8-1111-2222-3333-444455556666";
+    expect(liveSessionsOf(listEvents(), summit, new Date("2026-10-24T07:30:00+08:00"))).toHaveLength(2);
+    expect(liveSessionsOf(listEvents(), summit, new Date("2026-10-24T14:00:00+08:00"))).toHaveLength(1);
   });
 });

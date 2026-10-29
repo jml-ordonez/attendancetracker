@@ -91,10 +91,10 @@ export function AdminShell({ admin, children }: { admin: AdminIdentity; children
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center justify-between gap-3 px-5">
         <Link href="/admin/dashboard" className="flex min-w-0 items-center gap-3 rounded-lg">
-          <BrandMark className="h-10 w-10" />
+          <BrandMark className="h-11 w-11" />
           <span className="min-w-0 leading-tight">
-            <span className="block truncate font-display text-[15px] font-semibold text-ink">BA Attendance</span>
-            <span className="block truncate text-xs text-muted">Business Administration</span>
+            <span className="block truncate font-display text-[1.0625rem] font-semibold text-ink">BA Attendance</span>
+            <span className="block truncate text-[13px] font-medium text-ink-soft">Business Administration</span>
           </span>
         </Link>
         <button

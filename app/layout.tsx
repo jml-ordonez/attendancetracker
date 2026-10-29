@@ -28,7 +28,6 @@ export const metadata: Metadata = {
   },
   description:
     "Attendance for Business Administration events, seminars and assemblies: encrypted, single-use QR passes verified at the door.",
-  icons: { icon: "/icon.svg" },
   manifest: "/manifest.json",
 };
 

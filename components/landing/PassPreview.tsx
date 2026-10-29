@@ -56,7 +56,7 @@ export function PassPreview() {
             <p className="font-display text-lg font-semibold leading-tight">Maria Santos</p>
             <p className="figures text-xs text-ink/75">2021003213 · MM-1A</p>
           </div>
-          <BrandMark inverted className="h-9 w-9" />
+          <BrandMark className="h-10 w-10" />
         </div>
 
         <div className="relative px-5 pb-5 pt-4">

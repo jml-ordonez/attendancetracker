@@ -124,6 +124,7 @@ export const studentRegistrationSchema = z.object({
   studentIdNumber: studentIdSchema,
   email: uaEmailSchema,
   section: sectionSchema,
+  eventId: z.string().trim().min(1, "Choose the event you're attending."),
 });
 
 /** Free text that must say something: trimmed, inner whitespace collapsed, at least one letter or digit. */

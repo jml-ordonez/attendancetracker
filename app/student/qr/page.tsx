@@ -1,36 +1,29 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, MapPin, PencilLine, ShieldCheck, Sun } from "lucide-react";
+import { ArrowLeft, CalendarDays, MapPin, PencilLine, RefreshCw, ShieldCheck, Sun } from "lucide-react";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { SelectField } from "@/components/ui/Field";
 import { btn } from "@/components/ui/styles";
 import { DynamicQRDisplay } from "@/components/student/DynamicQRDisplay";
 import { StudentRegisterModal } from "@/components/auth/StudentRegisterModal";
 import { useRegisteredStudent } from "@/lib/auth/session";
-import { graceEnds, OPENS_EARLY_MINS, pickSession, publishedSessions } from "@/lib/attendance/schedule";
+import { graceEnds, liveSessionsOf, OPENS_EARLY_MINS } from "@/lib/attendance/schedule";
+import { useEvents } from "@/lib/client/events";
 import { formatDay, formatTime } from "@/lib/format";
 import { MAJOR_SHORT, isKnownSection } from "@/lib/validation";
-import type { BAEvent } from "@/types/events";
 
 export default function StudentQRPage() {
   const student = useRegisteredStudent();
   const [editing, setEditing] = useState(false);
-  const [events, setEvents] = useState<BAEvent[] | null>(null);
-  const [eventsError, setEventsError] = useState(false);
+  const { events, error: eventsError, reload } = useEvents();
   const [chosen, setChosen] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/events", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d) => setEvents(d.events))
-      .catch(() => setEventsError(true));
-  }, []);
-
-  const sessions = useMemo(() => (events ? publishedSessions(events).filter((s) => s.state !== "ended") : []), [events]);
-  const pick = useMemo(() => sessions.find((s) => s.session.id === chosen) ?? (events ? pickSession(events) : null), [sessions, chosen, events]);
-  const active = pick && pick.state !== "ended" ? pick : sessions[0] ?? null;
+  // Only the sessions of the event the student registered for.
+  const registeredEventId = student?.eventId;
+  const sessions = useMemo(() => (events && registeredEventId ? liveSessionsOf(events, registeredEventId) : []), [events, registeredEventId]);
+  const active = sessions.find((s) => s.session.id === chosen) ?? sessions.find((s) => s.state === "open") ?? sessions[0] ?? null;
 
   if (student === undefined) return <div className="min-h-dvh bg-card" aria-busy="true" />;
 
@@ -61,8 +54,11 @@ export default function StudentQRPage() {
       <header className="border-b border-line bg-card">
         <div className="mx-auto flex h-16 max-w-xl items-center justify-between gap-3 px-4">
           <Link href="/" className="flex items-center gap-3 rounded-lg py-1" aria-label="BA Attendance home">
-            <BrandMark className="h-10 w-10" />
-            <span className="font-display text-base font-semibold tracking-tight">BA Attendance</span>
+            <BrandMark className="h-11 w-11" />
+            <span className="leading-tight">
+              <span className="block font-display text-lg font-semibold tracking-tight">BA Attendance</span>
+              <span className="hidden text-[13px] font-medium text-ink-soft min-[400px]:block">College of Business Administration</span>
+            </span>
           </Link>
           <button type="button" onClick={() => setEditing(true)} className={btn.ghost}>
             <PencilLine className="h-4 w-4" aria-hidden="true" />
@@ -105,31 +101,47 @@ export default function StudentQRPage() {
                 </button>
               </div>
             ) : eventsError ? (
-              <p className="rounded-lg bg-rose-soft px-4 py-3 text-sm font-medium text-rose" role="alert">
-                Couldn’t load events. Check your connection and reload the page.
-              </p>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-rose-soft px-4 py-3 text-sm font-medium text-rose" role="alert">
+                Couldn’t load events. Check your connection.
+                <button type="button" onClick={reload} className="press inline-flex items-center gap-1.5 font-semibold hover:underline">
+                  <RefreshCw className="h-4 w-4" aria-hidden="true" /> Try again
+                </button>
+              </div>
             ) : !events ? (
               <div className="h-80 animate-pulse rounded-xl bg-paper" />
             ) : !active ? (
               <div className="rounded-xl bg-paper p-6 text-center">
                 <CalendarDays className="mx-auto h-7 w-7 text-muted" aria-hidden="true" />
-                <p className="mt-3 font-semibold">No events are taking attendance</p>
-                <p className="mt-1 text-sm text-ink-soft">When the department publishes an event, it appears here and you can show your pass.</p>
+                <p className="mt-3 font-semibold">{student.eventId ? "Your event is no longer open" : "Choose your event"}</p>
+                <p className="mt-1 text-sm text-ink-soft">
+                  {student.eventId
+                    ? "The event you registered for has ended or was removed. Choose another event to get a new pass."
+                    : "Pick the event you’re attending to get your pass for it."}
+                </p>
+                <button type="button" onClick={() => setEditing(true)} className={`${btn.primary} mt-4`}>
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  Choose event
+                </button>
               </div>
             ) : (
               <>
                 {sessions.length > 1 ? (
-                  <SelectField label="Event" value={active.session.id} onChange={(e) => setChosen(e.target.value)}>
+                  <SelectField label="Session" value={active.session.id} onChange={(e) => setChosen(e.target.value)}>
                     {sessions.map((s) => (
                       <option key={s.session.id} value={s.session.id}>
-                        {s.event.title} · {s.session.title} ({formatDay(s.session.time_in_start)})
+                        {s.session.title} ({formatTime(s.session.time_in_start)})
                       </option>
                     ))}
                   </SelectField>
                 ) : null}
 
                 <div className={sessions.length > 1 ? "mt-4" : ""}>
-                  <p className="font-display text-lg font-semibold leading-snug">{active.event.title}</p>
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-display text-lg font-semibold leading-snug">{active.event.title}</p>
+                    <button type="button" onClick={() => setEditing(true)} className="press shrink-0 rounded-md px-2 py-1 text-sm font-semibold text-brand-ink hover:bg-brand-tint">
+                      Change event
+                    </button>
+                  </div>
                   <p className="text-sm text-ink-soft">{active.session.title}</p>
                   <p className="figures mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted">
                     <span className="inline-flex items-center gap-1.5">

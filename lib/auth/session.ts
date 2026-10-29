@@ -2,7 +2,7 @@
  * Student registration, stored on the student's own device.
  *
  * Students do not have accounts or passwords: they register their student
- * identity (ID number, name, program, section) once to generate dynamic
+ * identity (ID number, name, program, section) and the event they attend once to generate dynamic
  * attendance passes for time-in and time-out. Staff sessions are a signed
  * server cookie (see `admin-session.ts`), not local storage.
  */
@@ -21,6 +21,8 @@ export interface RegisteredStudentSession {
   majorName: string;
   yearLevel: string;
   section: string;
+  /** The event the student registered for; missing on registrations made before events were chosen. */
+  eventId?: string;
   registeredAt: string;
 }
 
@@ -39,7 +41,8 @@ function isStudentRecord(value: unknown): value is RegisteredStudentSession {
     typeof v.studentIdNumber === "string" &&
     typeof v.email === "string" &&
     typeof v.majorCode === "string" &&
-    typeof v.section === "string"
+    typeof v.section === "string" &&
+    (v.eventId === undefined || typeof v.eventId === "string")
   );
 }
 
