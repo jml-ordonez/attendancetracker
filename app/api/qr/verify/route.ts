@@ -12,7 +12,10 @@ const schema = z.object({
   token: z.string().min(1).max(4000),
   eventId: z.string().min(1),
   sessionId: z.string().min(1),
-  /** Optional: the scanner now leaves it out and the pass decides time-in or time-out. */
+  /**
+   * Set when staff switch the scanner to Time-in or Time-out. Left out in Auto,
+   * where a one-pass pass times in first and times out on a later scan.
+   */
   expectedPurpose: purposeSchema.optional(),
 });
 
@@ -63,7 +66,7 @@ export async function POST(request: NextRequest) {
       found,
       // One pass serves time-in and time-out, so it is not single-use; the
       // duplicate checks in recordAttendance stop a second time-in or time-out.
-      purpose: p.p === "attendance" ? "attendance" : (expectedPurpose ?? p.p),
+      purpose: expectedPurpose ?? p.p,
       officer: admin.name,
       method: "qr",
     });

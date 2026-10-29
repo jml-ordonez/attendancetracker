@@ -8,10 +8,13 @@ import { addScan, consumeToken, findScan } from "@/lib/attendance/store";
 export const CHECK_IN_OPENS_EARLY_MINS = 60;
 
 /**
- * With one pass for time-in and time-out, a second scan this soon after
- * timing in is treated as a repeat at the door, not a time-out.
+ * With one pass for time-in and time-out, a second scan this soon after timing
+ * in is an accidental double read at the door, not a time-out. Kept short: the
+ * scanner already ignores a pass that stays in front of the camera, and staff
+ * can switch the scanner to "Time-out" to record a departure straight away.
+ * (Was 5 minutes, which refused real time-outs of short stays.)
  */
-export const MIN_MINS_BEFORE_CHECKOUT = 5;
+export const MIN_SECS_BEFORE_CHECKOUT = 60;
 
 const TIME_ZONE = process.env.APP_TIMEZONE || "Asia/Manila";
 
@@ -91,10 +94,13 @@ export function recordAttendance(input: RecordAttendanceInput): RecordAttendance
         student
       );
     }
-    if (timeIn && now.getTime() - new Date(timeIn.timestamp).getTime() < MIN_MINS_BEFORE_CHECKOUT * 60000) {
+    const sinceTimeIn = timeIn ? now.getTime() - new Date(timeIn.timestamp).getTime() : Infinity;
+    if (timeIn && sinceTimeIn < MIN_SECS_BEFORE_CHECKOUT * 1000) {
+      const wait = Math.max(1, Math.ceil((MIN_SECS_BEFORE_CHECKOUT * 1000 - sinceTimeIn) / 1000));
       return fail(
         "DUPLICATE_SCAN",
-        `${timeIn.studentName} already timed in at ${clockTime(timeIn.timestamp)}. Scan the same pass again when leaving to time out.`,
+        `${timeIn.studentName} just timed in at ${clockTime(timeIn.timestamp)}, so this scan was ignored as a double read. ` +
+          `If they are leaving, scan again in ${wait} second${wait === 1 ? "" : "s"}, or switch the scanner to Time-out.`,
         student
       );
     }

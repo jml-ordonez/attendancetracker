@@ -42,7 +42,9 @@ export function DynamicQRDisplay({ student, eventId, sessionId }: DynamicQRDispl
         width: 1024,
         margin: 4,
         color: { dark: "#1c1917", light: "#ffffff" },
-        errorCorrectionLevel: "M",
+        // L: a phone screen is a clean, flat surface, so the extra redundancy of M only makes the
+        // modules smaller (77 → 69 per side for a pass), which is harder for cameras to read.
+        errorCorrectionLevel: "L",
       });
       if (id !== requestId.current) return;
       setQr(url);
@@ -69,7 +71,7 @@ export function DynamicQRDisplay({ student, eventId, sessionId }: DynamicQRDispl
 
   return (
     <div>
-      <div className="relative mx-auto aspect-square w-full max-w-[19rem]">
+      <div className="relative mx-auto aspect-square w-full max-w-[22rem]">
         {error ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl bg-rose-soft p-6 text-center" role="alert">
             <AlertTriangle className="h-7 w-7 text-rose" aria-hidden="true" />

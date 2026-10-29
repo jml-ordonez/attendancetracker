@@ -7,9 +7,13 @@ import type { ScanVerificationResult } from "@/types/qr";
 import { cn } from "@/lib/utils";
 import { formatDuration, formatTimeSeconds } from "@/lib/format";
 
+/** Auto: a pass times in first and times out on a later scan. Time-in / Time-out: every scan records that. */
+export type ScanMode = "auto" | "time_in" | "time_out";
+
 interface QRScannerProps {
   eventId: string;
   sessionId: string;
+  mode?: ScanMode;
   disabled?: boolean;
   onScanned?: (result: ScanVerificationResult) => void;
   onOpenManualEntry?: () => void;
@@ -46,7 +50,7 @@ function cameraErrorName(err: unknown): string {
   return text.match(/(NotAllowedError|PermissionDeniedError|NotFoundError|DevicesNotFoundError|OverconstrainedError|NotReadableError|TrackStartError|InsecureContext)/)?.[1] ?? "Unknown";
 }
 
-export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManualEntry }: QRScannerProps) {
+export function QRScanner({ eventId, sessionId, mode = "auto", disabled, onScanned, onOpenManualEntry }: QRScannerProps) {
   const [camera, setCamera] = useState<"starting" | "on" | "off" | "error">("starting");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [result, setResult] = useState<ScanVerificationResult | null>(null);
@@ -65,13 +69,14 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
   const audioRef = useRef<AudioContext | null>(null);
 
   // Latest props for the camera callback, which is registered once.
-  const ctx = useRef({ eventId, sessionId, disabled, sound, onScanned });
+  const ctx = useRef({ eventId, sessionId, mode, disabled, sound, onScanned });
   useEffect(() => {
-    ctx.current = { eventId, sessionId, disabled, sound, onScanned };
+    ctx.current = { eventId, sessionId, mode, disabled, sound, onScanned };
   });
 
-  // A new session starts with a clean slate.
-  const scope = `${eventId}|${sessionId}`;
+  // A new session or mode starts with a clean slate: a pass still in view after
+  // switching to Time-out is read again instead of being ignored as a repeat.
+  const scope = `${eventId}|${sessionId}|${mode}`;
   const [lastScope, setLastScope] = useState(scope);
   if (scope !== lastScope) {
     setLastScope(scope);
@@ -148,7 +153,12 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
       const res = await fetch("/api/qr/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, eventId: c.eventId, sessionId: c.sessionId }),
+        body: JSON.stringify({
+          token,
+          eventId: c.eventId,
+          sessionId: c.sessionId,
+          ...(c.mode !== "auto" ? { expectedPurpose: c.mode } : {}),
+        }),
         signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
       });
       if (res.status === 401) {
@@ -208,13 +218,22 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
         {
           // More decode attempts per second: a pass is picked up as soon as it is steady in frame.
           fps: 24,
-          // Matches the square viewfinder, so no pixels are captured only to be cropped away.
-          aspectRatio: 1,
           // Passes are never mirrored; skipping the flipped retry halves the work on frames without a code.
           disableFlip: true,
-          qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.8); return { width: s, height: s }; },
-          // A sharper rear-camera stream; "ideal" falls back quietly on cameras that can't.
-          videoConstraints: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+          // The square the library decodes, drawn by its own shaded overlay so what staff see is what is read.
+          qrbox: (w, h) => {
+            const size = Math.floor(Math.min(w, h) * 0.85);
+            return { width: size, height: size };
+          },
+          // A sharp rear-camera stream for the dense pass codes. No aspectRatio: the library applies it
+          // to the live track afterwards, and many cameras answer by dropping to a low resolution.
+          videoConstraints: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            // Keep refocusing as the pass moves closer; ignored by cameras that can't.
+            advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
+          },
         },
         (text) => void verifyRef.current(text),
         () => {}
@@ -298,26 +317,22 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
     <div className="grid overflow-hidden rounded-xl border border-line bg-card lg:grid-cols-[minmax(0,1fr)_22rem]">
       {/* Viewfinder */}
       <div className="relative flex min-h-[340px] flex-col items-center justify-center bg-[#1c1917] p-4 sm:min-h-[420px]">
-        <div className="relative w-full max-w-md overflow-hidden rounded-lg">
-          <div id={READER_ID} className="aspect-square w-full bg-black [&_#qr-shaded-region]:hidden [&_video]:h-full [&_video]:w-full [&_video]:object-cover" />
-          {camera === "on" && (
-            <div className="pointer-events-none absolute inset-[14%]" aria-hidden="true">
-              <div
-                className={cn(
-                  "absolute inset-0 rounded-md border-2 transition-colors duration-150",
-                  flash === "ok" ? "border-emerald-400" : flash === "warn" ? "border-amber-400" : flash === "fail" ? "border-rose-400" : "border-white/80"
-                )}
-              />
-              {processing && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-sm font-medium text-white">
-                    <Loader2 className="h-4 w-4 animate-spin" /> Checking pass…
-                  </span>
-                </div>
-              )}
-              <div className="scan-sweep absolute inset-0">
-                <div className="mx-2 h-0.5 bg-brand shadow-[0_0_10px_1px_rgba(250,204,21,0.6)]" />
-              </div>
+        {/*
+          The video keeps its own shape. Stretching it to a square (object-cover) made the library decode a
+          squashed image of the pass, which dense codes don't survive. Its shaded overlay marks the decode area.
+        */}
+        <div
+          className={cn(
+            "relative w-full max-w-xl overflow-hidden rounded-lg ring-4 transition-[box-shadow,--tw-ring-color] duration-150",
+            flash === "ok" ? "ring-emerald-400" : flash === "warn" ? "ring-amber-400" : flash === "fail" ? "ring-rose-400" : "ring-transparent"
+          )}
+        >
+          <div id={READER_ID} className={cn("w-full bg-black [&_video]:block [&_video]:h-auto [&_video]:w-full", camera !== "on" && "aspect-video")} />
+          {camera === "on" && processing && (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
+              <span className="flex items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-sm font-medium text-white">
+                <Loader2 className="h-4 w-4 animate-spin" /> Checking pass…
+              </span>
             </div>
           )}
         </div>
@@ -325,7 +340,15 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
         <div className="absolute inset-x-4 top-4 flex items-center justify-between gap-2 text-sm text-white">
           <span className="flex items-center gap-2 rounded-full bg-black/45 px-3 py-1.5">
             {camera === "on" ? <span className="live-dot text-emerald-400" aria-hidden="true" /> : <CameraOff className="h-3.5 w-3.5" aria-hidden="true" />}
-            {camera === "on" ? "Scanning passes · in or out" : camera === "starting" ? "Starting camera…" : "Camera off"}
+            {camera === "on"
+              ? mode === "time_in"
+                ? "Scanning · time-in only"
+                : mode === "time_out"
+                  ? "Scanning · time-out only"
+                  : "Scanning passes · in or out"
+              : camera === "starting"
+                ? "Starting camera…"
+                : "Camera off"}
           </span>
           <span className="flex gap-1.5">
             <button
@@ -406,7 +429,13 @@ export function QRScanner({ eventId, sessionId, disabled, onScanned, onOpenManua
           ) : (
             <div className="flex h-full min-h-40 flex-col items-center justify-center rounded-xl border border-dashed border-line-strong p-6 text-center">
               <Camera className="mb-2 h-6 w-6 text-muted" aria-hidden="true" />
-              <p className="text-sm text-ink-soft">Hold the student’s pass inside the frame. The first scan checks them in; the same pass scanned later checks them out.</p>
+              <p className="text-sm text-ink-soft">
+                {mode === "time_out"
+                  ? "Hold the student’s pass inside the frame to time them out."
+                  : mode === "time_in"
+                    ? "Hold the student’s pass inside the frame to time them in."
+                    : "Hold the student’s pass inside the frame. The first scan times them in; the same pass scanned again (after a minute) times them out."}
+              </p>
             </div>
           )}
         </div>

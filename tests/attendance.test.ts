@@ -26,7 +26,7 @@ import { liveSessionsOf, registrableEvents } from "../lib/attendance/schedule";
 // Seeded "Morning keynote": check-in 08:00–09:00 (UTC+8), 15 min grace, check-out 12:00–13:00.
 const EVENT = "a2b4c6d8-1111-2222-3333-444455556666";
 const SESSION = "b3c5d7e9-2222-3333-4444-555566667777";
-const at = (hhmm: string) => new Date(`2026-10-24T${hhmm}:00+08:00`);
+const at = (hhmm: string) => new Date(`2026-10-24T${hhmm.length === 5 ? `${hhmm}:00` : hhmm}+08:00`);
 const student = { name: "Maria Santos", idNumber: "2024-01492-BA", majorCode: "BSBA-FM", section: "BA-FM 2-1" };
 /** The seeded session, looked up the way the API routes do before recording. */
 let found: SessionMatch | null = null;
@@ -85,8 +85,10 @@ describe("Attendance pipeline", () => {
     expect(first.status).toBe("SUCCESS_ON_TIME");
     expect(first.details?.action).toBe("time_in");
 
-    // A repeat at the door moments later is not a check-out.
-    expect(scan("attendance", "08:07").status).toBe("DUPLICATE_SCAN");
+    // A double read at the door seconds later is not a check-out, and says how to time out.
+    const repeat = scan("attendance", "08:05:30");
+    expect(repeat.status).toBe("DUPLICATE_SCAN");
+    expect(repeat.message).toMatch(/scan again in 30 seconds, or switch the scanner to Time-out/);
 
     const second = scan("attendance", "12:30");
     expect(second.status).toBe("SUCCESS_CHECKOUT");
@@ -96,6 +98,21 @@ describe("Attendance pipeline", () => {
     expect(third.success).toBe(false);
     expect(third.message).toMatch(/already completed attendance/);
     expect(listScans()).toHaveLength(2);
+  });
+
+  it("times out a short stay once the double-read window has passed", () => {
+    scan("attendance", "08:05");
+    const out = scan("attendance", "08:08");
+    expect(out.success).toBe(true);
+    expect(out.details?.action).toBe("time_out");
+    expect(out.details?.isEarlyDeparture).toBe(true);
+  });
+
+  it("times out at once when staff set the scanner to Time-out", () => {
+    scan("attendance", "08:05");
+    const out = scan("time_out", "08:05:20");
+    expect(out.success).toBe(true);
+    expect(out.details?.action).toBe("time_out");
   });
 
   it("pairs check-in and check-out into one roll entry", () => {
