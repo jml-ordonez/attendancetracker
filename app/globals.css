@@ -1,35 +1,40 @@
 @import "tailwindcss";
 
 /*
-  Design tokens: blue and white.
-  White surfaces on a pale blue-white ground, deep navy ink, one blue that
+  Design tokens: pure white and yellow.
+  Pages sit on pure white; `paper` is a soft neutral used only for insets
+  (segmented controls, skeletons, grouped fields). Charcoal ink, one yellow that
   carries the brand, the primary action and the main data series.
+  Yellow is a fill colour only: text on it is ink, and yellow-family text on
+  white uses brand-ink (dark amber) so it stays readable.
   Status colours are reserved for meaning (on time, late, left early, rejected).
 */
 @theme inline {
-  --color-paper: #f4f7fc;
+  --color-paper: #f7f6f2;
   --color-card: #ffffff;
-  --color-ink: #0b1b36;
-  --color-ink-soft: #33415c;
-  --color-muted: #586a86;
-  --color-line: #e2e8f2;
-  --color-line-strong: #c8d3e4;
+  --color-ink: #1c1917;
+  --color-ink-soft: #44403c;
+  --color-muted: #6b645a;
+  --color-line: #ece9e1;
+  --color-line-strong: #d9d4c7;
 
-  --color-brand: #1d4ed8;
-  --color-brand-dark: #1a3fae;
-  --color-brand-deep: #0e2a6b;
-  --color-brand-soft: #e6eefc;
-  --color-brand-tint: #f1f5fe;
-  --color-brand-light: #9dbaf5;
+  --color-brand: #facc15;
+  --color-brand-dark: #eab308;
+  --color-brand-deep: #1c1917;
+  --color-brand-soft: #fef3c7;
+  --color-brand-tint: #fefbe8;
+  --color-brand-light: #fde047;
+  --color-brand-ink: #854d0e;
 
   --color-pine: #166534;
   --color-pine-soft: #e3f4e8;
-  --color-brass: #8a4b06;
-  --color-brass-soft: #fcf0d9;
+  --color-brass: #9a3412;
+  --color-brass-soft: #ffedd5;
   --color-rose: #b42318;
   --color-rose-soft: #fdeceb;
-  --color-sky: #1e4f8f;
-  --color-sky-soft: #e4eefa;
+  /* "Checked out": a calm neutral, so the palette stays white, yellow and charcoal. */
+  --color-sky: #44403c;
+  --color-sky-soft: #f1efea;
 
   --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-plex-serif), Georgia, serif;
@@ -42,7 +47,7 @@ html {
 }
 
 body {
-  background: var(--color-paper);
+  background: var(--color-card);
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-feature-settings: "kern";
@@ -51,11 +56,11 @@ body {
 
 ::selection {
   background: var(--color-brand);
-  color: #fff;
+  color: var(--color-ink);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-brand);
+  outline: 2px solid var(--color-brand-ink);
   outline-offset: 2px;
 }
 
@@ -187,15 +192,6 @@ select {
   }
 }
 
-@keyframes countdown {
-  from {
-    stroke-dashoffset: 0;
-  }
-  to {
-    stroke-dashoffset: 50.3;
-  }
-}
-
 /* The check-in toast: arrives late in each pass cycle, holds, then leaves. */
 @keyframes toast {
   0%,
@@ -222,10 +218,6 @@ select {
   animation: float 7s ease-in-out infinite;
 }
 
-.animate-countdown {
-  animation: countdown linear both;
-}
-
 .animate-toast {
   animation: toast 3.6s ease-out both;
 }
@@ -240,7 +232,7 @@ select {
 @media (hover: hover) {
   .lift:hover {
     transform: translateY(-3px);
-    box-shadow: 0 18px 40px -22px rgba(14, 42, 107, 0.45);
+    box-shadow: 0 18px 40px -22px rgba(28, 25, 23, 0.35);
   }
 }
 

@@ -29,31 +29,70 @@ export const NAME_PATTERN = /^[\p{L}][\p{L}\s'.-]*$/u;
 
 const MAJOR_CODES = Object.keys(MAJORS) as [string, ...string[]];
 
+const NAME_MESSAGE = "Use letters only (spaces, hyphens and apostrophes allowed).";
+
 export const studentIdSchema = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(STUDENT_ID_PATTERN, "Use the format e.g 2022001234 (10-digit student ID).")
+  .min(1, "Enter the student ID number.")
+  .regex(STUDENT_ID_PATTERN, "Use the 10-digit format, e.g. 2022001234.")
   .refine((v) => {
-    const digits = v.replace(/\D/g, "");
-    const year = Number(digits.slice(0, 4));
+    const year = Number(v.replace(/\D/g, "").slice(0, 4));
     return year >= 2000 && year <= new Date().getFullYear();
   }, "The year at the start of the ID isn't valid.");
 
+/** A full name as printed on the pass (first + last name, up to 40 characters each). */
 export const personNameSchema = z
   .string()
   .trim()
   .min(2, "Enter the full name.")
-  .max(80, "Keep the name under 80 characters.")
-  .regex(/^[\p{L}][\p{L}\s'.-]*$/u, "Use letters only (spaces, hyphens and apostrophes allowed).");
+  .max(100, "Keep the name under 100 characters.")
+  .regex(NAME_PATTERN, NAME_MESSAGE);
+
+const namePartSchema = (label: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, `Enter your ${label}.`)
+    .max(40, `Keep your ${label} under 40 characters.`)
+    .regex(NAME_PATTERN, NAME_MESSAGE);
+
+export const uaEmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(1, "Enter your university email.")
+  .regex(UA_EMAIL_PATTERN, "Enter a valid university email ending with @ua.edu.ph.");
 
 export const majorCodeSchema = z.enum(MAJOR_CODES, { message: "Choose a program." });
+
+/**
+ * The sections students register under. Each names its program (MM = Marketing
+ * Management) and year, so the program is derived from the section.
+ */
+export const SECTIONS = ["MM-1A", "MM-1B", "MM-2A", "MM-2B", "MM-3A", "MM-3B", "MM-4A", "MM-4B"] as const;
+
+export function isKnownSection(section: string): boolean {
+  return (SECTIONS as readonly string[]).includes(section.trim().toUpperCase());
+}
+
+/** The sections of one year level, e.g. 2nd Year → MM-2A, MM-2B. */
+export function sectionsForYear(yearLevel: string): string[] {
+  return SECTIONS.filter((s) => sectionMatchesYear(s, yearLevel));
+}
+
+/** The year level a section belongs to, e.g. MM-2A → 2nd Year. */
+export function yearLevelForSection(section: string): (typeof YEAR_LEVELS)[number] | undefined {
+  return YEAR_LEVELS.find((y) => sectionMatchesYear(section, y));
+}
 
 export const sectionSchema = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(SECTION_PATTERN, "Use the format MM-1A (program, year and section).");
+  .min(1, "Select your section.")
+  .refine(isKnownSection, "Choose a section from the list (MM-1A to MM-4B).");
 
 /** Derives the major program code from the section string (e.g. MM-1A -> BSBA-MM). */
 export function deriveMajorFromSection(section: string): string {
@@ -78,7 +117,60 @@ export function sectionMatchesYear(section: string, yearLevel: string): boolean 
   return new RegExp(`^(?:[A-Z]+-${year}[A-Z0-9]|BA-[A-Z]+ ${year}-)`).test(sec);
 }
 
-export const purposeSchema = z.enum(["time_in", "time_out"], { message: "Choose check-in or check-out." });
+/** The student registration form; the year level is derived from the section. */
+export const studentRegistrationSchema = z.object({
+  firstName: namePartSchema("first name"),
+  lastName: namePartSchema("last name"),
+  studentIdNumber: studentIdSchema,
+  email: uaEmailSchema,
+  section: sectionSchema,
+});
+
+/** Free text that must say something: trimmed, inner whitespace collapsed, at least one letter or digit. */
+const textSchema = (min: number, max: number, tooShort: string, tooLong: string) =>
+  z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/\s+/g, " "))
+    .pipe(
+      z
+        .string()
+        .min(min, tooShort)
+        .max(max, tooLong)
+        .regex(/[\p{L}\p{N}]/u, tooShort)
+    );
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A new event, checked by the "New event" form and again by POST /api/events. */
+export const eventInputSchema = z
+  .object({
+    title: textSchema(5, 120, "Enter a title of at least 5 characters.", "Keep the title under 120 characters."),
+    description: textSchema(10, 500, "Add a short description (at least 10 characters).", "Keep the description under 500 characters."),
+    venue: textSchema(3, 120, "Enter the venue (at least 3 characters).", "Keep the venue under 120 characters."),
+    start: z.iso.datetime({ offset: true, message: "Choose a start date and time." }),
+    end: z.iso.datetime({ offset: true, message: "Choose an end date and time." }),
+    gracePeriodMins: z
+      .number({ message: "Enter the grace period in minutes." })
+      .int("Enter whole minutes.")
+      .min(0, "Use 0 to 120 minutes.")
+      .max(120, "Use 0 to 120 minutes."),
+    publish: z.boolean(),
+  })
+  .superRefine((v, ctx) => {
+    const start = new Date(v.start).getTime();
+    const end = new Date(v.end).getTime();
+    if (Number.isNaN(start) || Number.isNaN(end)) return;
+    if (end <= start) ctx.addIssue({ code: "custom", path: ["end"], message: "The end must be after the start." });
+    else if (end - start > DAY_MS) ctx.addIssue({ code: "custom", path: ["end"], message: "Split events longer than a day into separate events." });
+    else if (end <= Date.now()) ctx.addIssue({ code: "custom", path: ["end"], message: "This time has already passed. Choose a later end." });
+    else if (v.gracePeriodMins * 60000 >= end - start)
+      ctx.addIssue({ code: "custom", path: ["gracePeriodMins"], message: "The grace period must be shorter than the event." });
+  });
+
+export type EventInput = z.infer<typeof eventInputSchema>;
+
+export const purposeSchema = z.enum(["time_in", "time_out"], { message: "Choose time-in or time-out." });
 
 export const reasonSchema = z
   .string()

@@ -123,7 +123,7 @@ export function AuditLogScreen() {
                           type="button"
                           aria-expanded={expanded}
                           onClick={() => setOpen(expanded ? null : e.id)}
-                          className="press h-9 rounded-md px-2.5 text-sm font-semibold text-brand hover:bg-brand-tint"
+                          className="press h-9 rounded-md px-2.5 text-sm font-semibold text-brand-ink hover:bg-brand-tint"
                         >
                           {expanded ? "Hide" : "Details"}
                         </button>

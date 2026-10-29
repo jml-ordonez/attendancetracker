@@ -90,8 +90,8 @@ export function AdminShell({ admin, children }: { admin: AdminIdentity; children
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center justify-between gap-3 px-5">
-        <Link href="/admin/dashboard" className="flex min-w-0 items-center gap-3">
-          <BrandMark />
+        <Link href="/admin/dashboard" className="flex min-w-0 items-center gap-3 rounded-lg">
+          <BrandMark className="h-10 w-10" />
           <span className="min-w-0 leading-tight">
             <span className="block truncate font-display text-[15px] font-semibold text-ink">BA Attendance</span>
             <span className="block truncate text-xs text-muted">Business Administration</span>
@@ -123,11 +123,11 @@ export function AdminShell({ admin, children }: { admin: AdminIdentity; children
                       className={cn(
                         "press flex h-10 items-center gap-3 rounded-lg px-3 text-sm transition-colors",
                         active
-                          ? "bg-brand-soft font-semibold text-brand-dark"
+                          ? "bg-brand-soft font-semibold text-ink shadow-[inset_3px_0_0_var(--color-brand-dark)]"
                           : "font-medium text-ink-soft hover:bg-brand-tint hover:text-ink"
                       )}
                     >
-                      <Icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-brand" : "text-muted")} />
+                      <Icon className={cn("h-[18px] w-[18px] shrink-0", active ? "text-brand-ink" : "text-muted")} />
                       <span className="truncate">{item.label}</span>
                     </Link>
                   </li>
@@ -141,7 +141,7 @@ export function AdminShell({ admin, children }: { admin: AdminIdentity; children
       <div className="border-t border-line p-4">
         <div className="flex items-center gap-3">
           <span
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-semibold text-brand-dark"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-semibold text-brand-ink"
             aria-hidden="true"
           >
             {initials(admin.name)}
@@ -166,7 +166,7 @@ export function AdminShell({ admin, children }: { admin: AdminIdentity; children
 
   return (
     <AdminDataProvider admin={admin}>
-      <div className="flex h-dvh overflow-hidden bg-paper">
+      <div className="flex h-dvh overflow-hidden bg-card">
         {/* Desktop rail */}
         <aside className="hidden w-64 shrink-0 border-r border-line bg-card lg:block">{sidebar}</aside>
 
@@ -201,7 +201,7 @@ export function AdminShell({ admin, children }: { admin: AdminIdentity; children
             >
               <Menu className="h-5 w-5" aria-hidden="true" />
             </button>
-            <BrandMark className="h-7 w-7" />
+            <BrandMark className="h-8 w-8" />
             <span className="truncate text-sm font-semibold">{current?.label ?? "BA Attendance"}</span>
           </header>
           <main id="main" className="flex-1 overflow-y-auto">

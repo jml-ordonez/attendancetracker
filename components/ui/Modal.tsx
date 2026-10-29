@@ -43,8 +43,9 @@ export function Modal({ open, onClose, title, description, children, size = "md"
     document.body.style.overflow = "hidden";
 
     const dialog = dialogRef.current;
+    const preferredField = dialog?.querySelector<HTMLElement>('[data-autofocus="true"]');
     const firstField = dialog?.querySelector<HTMLElement>("input, select, textarea");
-    (firstField ?? dialog?.querySelector<HTMLElement>(FOCUSABLE))?.focus();
+    (preferredField ?? firstField ?? dialog?.querySelector<HTMLElement>(FOCUSABLE))?.focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -91,7 +92,7 @@ export function Modal({ open, onClose, title, description, children, size = "md"
           aria-labelledby={titleId}
           aria-describedby={description ? descId : undefined}
           className={cn(
-            "animate-sheet-in w-full overflow-hidden rounded-t-2xl bg-card shadow-[0_24px_60px_-12px_rgba(11,27,54,0.35)] sm:rounded-xl",
+            "animate-sheet-in w-full overflow-hidden rounded-t-2xl bg-card shadow-[0_24px_60px_-12px_rgba(28,25,23,0.3)] sm:rounded-xl",
             SIZES[size]
           )}
         >

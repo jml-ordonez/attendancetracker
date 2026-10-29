@@ -3,14 +3,18 @@ import { z } from "zod";
 import { generateStudentQRToken } from "@/lib/tokens/qr-token";
 import { findSession } from "@/lib/events/store";
 import { jsonError, parseBody } from "@/lib/http";
-import { majorCodeSchema, personNameSchema, purposeSchema, sectionSchema, studentIdSchema } from "@/lib/validation";
+import { majorCodeSchema, personNameSchema, sectionSchema, studentIdSchema } from "@/lib/validation";
 
-const EXPIRY_SECONDS = Number(process.env.NEXT_PUBLIC_QR_EXPIRY_SECONDS) || 45;
+/**
+ * How long a pass stays valid after its session ends. The pass no longer
+ * rotates: one code (on screen or downloaded) serves time-in and time-out,
+ * and the scanner still enforces the session's attendance windows.
+ */
+const VALID_AFTER_SESSION_SECONDS = 7 * 24 * 60 * 60;
 
 const schema = z.object({
   eventId: z.string().min(1),
   sessionId: z.string().min(1),
-  purpose: purposeSchema,
   student: z.object({
     name: personNameSchema,
     idNumber: studentIdSchema,
@@ -20,20 +24,21 @@ const schema = z.object({
 });
 
 /**
- * Issues a short-lived encrypted pass. Public: students have no accounts.
- * The old route also called Supabase auth and inserted into the token registry
- * on every refresh; both always failed for locally registered students and
- * added a network round trip to each 45-second rotation.
+ * Issues the encrypted pass for one session. Public: students have no accounts.
  */
 export async function POST(request: NextRequest) {
   const parsed = await parseBody(request, schema);
   if ("response" in parsed) return parsed.response;
-  const { eventId, sessionId, purpose, student } = parsed.data;
+  const { eventId, sessionId, student } = parsed.data;
 
   const found = findSession(eventId, sessionId);
   if (!found || found.event.status !== "published") {
     return jsonError("This event is no longer open for attendance. Choose another event.", 404);
   }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const sessionEndSec = Math.floor(new Date(found.session.time_out_end).getTime() / 1000);
+  const expirySeconds = Math.max(sessionEndSec - nowSec, 0) + VALID_AFTER_SESSION_SECONDS;
 
   const token = generateStudentQRToken({
     studentId: student.idNumber,
@@ -43,15 +48,12 @@ export async function POST(request: NextRequest) {
     section: student.section,
     eventId,
     sessionId,
-    purpose,
-    expirySeconds: EXPIRY_SECONDS,
+    purpose: "attendance",
+    expirySeconds,
   });
 
   return NextResponse.json({
     token: token.token,
-    purpose,
     expiresAt: token.expiresAt * 1000,
-    serverTime: Date.now(),
-    expirySeconds: EXPIRY_SECONDS,
   });
 }

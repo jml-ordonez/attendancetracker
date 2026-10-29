@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { btn, card } from "@/components/ui/styles";
 import { api, usePolling } from "@/lib/client/api";
 import { graceEnds, pickSession, publishedSessions, type SessionPick } from "@/lib/attendance/schedule";
-import { formatDay, formatDuration, formatTime, formatTimeSeconds, isSameDay, plural, relativeTime } from "@/lib/format";
+import { formatDay, formatTime, formatTimeSeconds, isSameDay, plural, relativeTime } from "@/lib/format";
 import { MAJOR_SHORT } from "@/lib/validation";
 import { cn } from "@/lib/utils";
 import type { AuditEntry } from "@/lib/audit/store";
@@ -40,10 +40,8 @@ export function OverviewScreen() {
     const leftEarly = outs.filter((s) => s.status === "left_early").length;
     const outKeys = new Set(outs.map((s) => `${s.studentIdNumber}|${s.sessionId}`));
     const inside = ins.filter((s) => !outKeys.has(`${s.studentIdNumber}|${s.sessionId}`)).length;
-    const stays = outs.map((s) => s.durationMinutes ?? 0);
-    const avgStay = stays.length ? Math.round(stays.reduce((a, b) => a + b, 0) / stays.length) : 0;
     const manual = today.filter((s) => s.method === "manual").length;
-    return { ins: ins.length, onTime, late, outs: outs.length, leftEarly, inside, avgStay, manual, total: today.length };
+    return { ins: ins.length, onTime, late, outs: outs.length, leftEarly, inside, manual, total: today.length };
   }, [today]);
 
   const sessionScans = useMemo(
@@ -59,7 +57,7 @@ export function OverviewScreen() {
   const finding = !loaded
     ? "Loading today’s attendance…"
     : current?.state === "open"
-      ? `${current.event.title} is open for attendance. ${plural(kpi.ins, "student")} checked in today${kpi.late ? `, ${kpi.late} late` : ""}.`
+      ? `${current.event.title} is open for attendance. ${plural(kpi.ins, "student")} timed in today${kpi.late ? `, ${kpi.late} late` : ""}.`
       : current?.state === "upcoming"
         ? `No session is open right now. Next: ${current.session.title}, ${formatDay(current.session.time_in_start)} at ${formatTime(current.session.time_in_start)}.`
         : "No upcoming sessions. Publish an event to open attendance.";
@@ -88,16 +86,9 @@ export function OverviewScreen() {
 
         {/* KPI strip: one panel divided into cells, figures as type. */}
         <section aria-label="Today’s attendance" className={cn(card, "animate-rise overflow-hidden")} style={{ "--i": 2 } as React.CSSProperties}>
-          <dl className="grid grid-cols-2 divide-line sm:grid-cols-3 lg:grid-cols-5 lg:divide-x [&>div]:border-line max-lg:[&>div]:border-b">
-            <Kpi label="Checked in today" value={loaded ? kpi.ins : null} sub={`${plural(kpi.inside, "student")} still inside`} />
-            <Kpi
-              label="On-time rate"
-              value={loaded ? (kpi.ins ? `${Math.round((kpi.onTime / kpi.ins) * 100)}%` : "—") : null}
-              sub={kpi.ins ? `${plural(kpi.late, "late arrival")}` : "No check-ins yet"}
-              tone={kpi.ins && kpi.onTime / kpi.ins < 0.85 ? "warn" : undefined}
-            />
-            <Kpi label="Checked out" value={loaded ? kpi.outs : null} sub={kpi.leftEarly ? `${kpi.leftEarly} left early` : "None left early"} />
-            <Kpi label="Average stay" value={loaded ? (kpi.outs ? formatDuration(kpi.avgStay) : "—") : null} sub={kpi.outs ? `Across ${plural(kpi.outs, "check-out")}` : "Shown after check-outs"} />
+          <dl className="grid grid-cols-1 divide-line sm:grid-cols-3 sm:divide-x [&>div]:border-line max-sm:[&>div]:border-b max-sm:[&>div:last-child]:border-b-0">
+            <Kpi label="Timed in today" value={loaded ? kpi.ins : null} sub={`${plural(kpi.inside, "student")} still inside${kpi.late ? ` · ${kpi.late} late` : ""}`} />
+            <Kpi label="Timed out" value={loaded ? kpi.outs : null} sub={kpi.leftEarly ? `${kpi.leftEarly} left early` : "None left early"} />
             <Kpi label="Manual entries" value={loaded ? kpi.manual : null} sub={`Of ${plural(kpi.total, "scan")} today`} />
           </dl>
         </section>
@@ -106,7 +97,7 @@ export function OverviewScreen() {
           <PanelHeader
             id="arrivals-h"
             title="Arrivals by quarter hour"
-            description={current ? `${current.session.title} · check-ins against the grace period` : "Check-ins over time"}
+            description={current ? `${current.session.title} · time-ins against the grace period` : "Time-ins over time"}
           />
           <ArrivalsChart pick={current} scans={sessionScans} />
         </section>
@@ -118,7 +109,7 @@ export function OverviewScreen() {
               title="Latest scans"
               description="Verified at the door, newest first"
               action={
-                <Link href="/admin/records" className="inline-flex items-center gap-1 text-sm font-semibold text-brand hover:underline">
+                <Link href="/admin/records" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-ink hover:underline">
                   All records <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
                 </Link>
               }
@@ -132,7 +123,7 @@ export function OverviewScreen() {
               title="Recent activity"
               description="From the audit log"
               action={
-                <Link href="/admin/audit-log" className="inline-flex items-center gap-1 text-sm font-semibold text-brand hover:underline">
+                <Link href="/admin/audit-log" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-ink hover:underline">
                   Audit log <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
                 </Link>
               }
@@ -147,14 +138,14 @@ export function OverviewScreen() {
               <h2 id="upcoming-h" className="text-base font-semibold">
                 Coming up
               </h2>
-              <Link href="/admin/events" className="inline-flex items-center gap-1 text-sm font-semibold text-brand hover:underline">
+              <Link href="/admin/events" className="inline-flex items-center gap-1 text-sm font-semibold text-brand-ink hover:underline">
                 Manage events <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
               </Link>
             </div>
             <ul className="grid gap-4 md:grid-cols-3">
               {upcoming.map(({ event, session }) => (
                 <li key={session.id} className={cn(card, "p-5")}>
-                  <p className="text-sm font-semibold text-brand">{formatDay(session.time_in_start)}</p>
+                  <p className="text-sm font-semibold text-brand-ink">{formatDay(session.time_in_start)}</p>
                   <p className="mt-1 font-display text-lg font-semibold leading-snug">{event.title}</p>
                   <p className="mt-1 text-sm text-ink-soft">{session.title}</p>
                   <p className="figures mt-3 flex items-center gap-1.5 text-sm text-muted">
@@ -162,7 +153,7 @@ export function OverviewScreen() {
                     <span className="truncate">{event.venue}</span>
                   </p>
                   <p className="figures mt-1 text-sm text-muted">
-                    Check-in {formatTime(session.time_in_start)}–{formatTime(session.time_in_end)}
+                    Time-in {formatTime(session.time_in_start)}–{formatTime(session.time_in_end)}
                   </p>
                 </li>
               ))}
@@ -203,10 +194,10 @@ function SessionBanner({ pick, scans, updatedAt }: { pick: SessionPick; scans: A
     >
       <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[1.4fr_1fr] lg:items-center">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 text-sm font-semibold text-brand">
+          <p className="flex items-center gap-2 text-sm font-semibold text-brand-ink">
             {state === "open" ? (
               <>
-                <span className="live-dot text-brand" aria-hidden="true" /> Open for attendance
+                <span className="live-dot text-brand-ink" aria-hidden="true" /> Open for attendance
               </>
             ) : state === "upcoming" ? (
               `Next session · ${formatDay(session.time_in_start)}`
@@ -223,7 +214,7 @@ function SessionBanner({ pick, scans, updatedAt }: { pick: SessionPick; scans: A
         <div>
           <dl className="figures grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
             <div>
-              <dt className="text-muted">Check-in</dt>
+              <dt className="text-muted">Time-in</dt>
               <dd className="mt-0.5 font-semibold">
                 {formatTime(session.time_in_start)}–{formatTime(session.time_in_end)}
               </dd>
@@ -233,7 +224,7 @@ function SessionBanner({ pick, scans, updatedAt }: { pick: SessionPick; scans: A
               <dd className="mt-0.5 font-semibold">{formatTime(graceEnds(session).toISOString())}</dd>
             </div>
             <div>
-              <dt className="text-muted">Check-out</dt>
+              <dt className="text-muted">Time-out</dt>
               <dd className="mt-0.5 font-semibold">
                 {formatTime(session.time_out_start)}–{formatTime(session.time_out_end)}
               </dd>
@@ -244,7 +235,7 @@ function SessionBanner({ pick, scans, updatedAt }: { pick: SessionPick; scans: A
           </div>
           <p className="figures mt-2 flex justify-between text-[13px] text-ink-soft">
             <span>
-              {plural(ins, "check-in")} · {plural(outs, "check-out")}
+              {plural(ins, "time-in")} · {plural(outs, "time-out")}
             </span>
             {updatedAt && <span className="text-muted">Updated {formatTimeSeconds(updatedAt.toISOString())}</span>}
           </p>
@@ -322,14 +313,14 @@ function ArrivalsChart({ pick, scans }: { pick: SessionPick | null; scans: Atten
               </span>
             </div>
           )}
-          <ol className="absolute inset-x-0 top-0 bottom-6 flex items-end gap-[3px]" aria-label="Check-ins per 15 minutes">
+          <ol className="absolute inset-x-0 top-0 bottom-6 flex items-end gap-[3px]" aria-label="Time-ins per 15 minutes">
             {buckets.map((b, i) => {
               const total = b.onTime + b.late;
               return (
                 <li
                   key={b.at.toISOString()}
                   className="flex h-full flex-1 flex-col justify-end"
-                  aria-label={`${formatTime(b.at.toISOString())}: ${total} check-in${total === 1 ? "" : "s"}`}
+                  aria-label={`${formatTime(b.at.toISOString())}: ${total} time-in${total === 1 ? "" : "s"}`}
                   title={`${formatTime(b.at.toISOString())} · ${b.onTime} on time, ${b.late} late`}
                 >
                   <div className="animate-grow-y flex flex-col justify-end overflow-hidden rounded-t-[3px]" style={{ height: `${(total / max) * 100}%`, "--i": i } as React.CSSProperties}>
@@ -351,7 +342,7 @@ function ArrivalsChart({ pick, scans }: { pick: SessionPick | null; scans: Atten
           </div>
         </div>
       </div>
-      {ins.length === 0 && <p className="mt-3 text-sm text-muted">No check-ins for this session yet. Bars appear as students are scanned.</p>}
+      {ins.length === 0 && <p className="mt-3 text-sm text-muted">No time-ins for this session yet. Bars appear as students are scanned.</p>}
     </div>
   );
 }
@@ -363,7 +354,7 @@ function RecentScans({ scans, loaded }: { scans: AttendanceScan[]; loaded: boole
     return (
       <p className="px-6 pb-8 pt-6 text-sm text-muted">
         No scans yet. Scans verified at the door appear here within seconds.{" "}
-        <Link href="/admin/scanner" className="font-semibold text-brand hover:underline">
+        <Link href="/admin/scanner" className="font-semibold text-brand-ink hover:underline">
           Open the scanner
         </Link>
       </p>
@@ -373,7 +364,7 @@ function RecentScans({ scans, loaded }: { scans: AttendanceScan[]; loaded: boole
     <div className="mt-3 overflow-x-auto">
       <table className="w-full text-left text-sm">
         <caption className="sr-only">Latest scans</caption>
-        <thead className="text-xs text-muted">
+        <thead className="bg-paper/70 text-xs uppercase tracking-wide text-muted">
           <tr className="border-b border-line">
             <th scope="col" className="px-5 py-2.5 font-medium sm:px-6">Student</th>
             <th scope="col" className="hidden px-3 py-2.5 font-medium md:table-cell">Program</th>

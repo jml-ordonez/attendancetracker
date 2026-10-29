@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ADMIN_COOKIE } from "@/lib/auth/admin-session";
+import { ADMIN_COOKIE, sessionCookieOptions } from "@/lib/auth/admin-session";
 import { logAudit } from "@/lib/audit/store";
 import { clientIp, getAdmin } from "@/lib/http";
 
@@ -16,7 +16,14 @@ export async function POST(request: NextRequest) {
       ip: clientIp(request),
     });
   }
-  const response = NextResponse.json({ ok: true });
-  response.cookies.set(ADMIN_COOKIE, "", { path: "/", maxAge: 0 });
+  const response = NextResponse.json(
+    { ok: true },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+      },
+    }
+  );
+  response.cookies.set(ADMIN_COOKIE, "", { ...sessionCookieOptions, maxAge: 0 });
   return response;
 }

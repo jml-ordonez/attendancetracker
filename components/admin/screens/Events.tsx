@@ -1,20 +1,19 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { CalendarPlus, Loader2, MapPin } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, Loader2, MapPin, Trash2 } from "lucide-react";
 import { useAdminData } from "@/components/admin/AdminData";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Modal } from "@/components/ui/Modal";
-import { Field, SelectField, TextAreaField } from "@/components/ui/Field";
+import { Field, TextAreaField } from "@/components/ui/Field";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { btn, card } from "@/components/ui/styles";
 import { api, ApiError } from "@/lib/client/api";
 import { sessionState } from "@/lib/attendance/schedule";
 import { formatDay, formatTime, plural } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { BAEvent, EventCategory } from "@/types/events";
-
-const CATEGORIES: EventCategory[] = ["Seminar", "Lecture", "Workshop", "Conference", "Meeting", "General Assembly"];
+import { eventInputSchema, fieldErrors } from "@/lib/validation";
+import type { BAEvent } from "@/types/events";
 
 type Filter = "upcoming" | "past" | "draft" | "all";
 
@@ -24,6 +23,8 @@ export function EventsScreen() {
   const [filter, setFilter] = useState<Filter>("upcoming");
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<BAEvent | null>(null);
 
   const now = updatedAt?.getTime() ?? 0;
   const visible = useMemo(
@@ -47,6 +48,7 @@ export function EventsScreen() {
   const setStatus = async (event: BAEvent, status: "published" | "draft" | "cancelled") => {
     setPending(event.id);
     setError(null);
+    setNotice(null);
     try {
       await api(`/api/events/${event.id}`, { method: "PATCH", json: { status } });
       await refreshEvents();
@@ -87,7 +89,7 @@ export function EventsScreen() {
             onClick={() => setFilter(value)}
             className={cn(
               "press h-9 rounded-md px-4 text-sm font-semibold",
-              filter === value ? "bg-brand-soft text-brand-dark" : "text-ink-soft hover:text-ink"
+              filter === value ? "bg-brand-soft text-brand-ink" : "text-ink-soft hover:text-ink"
             )}
           >
             {label}
@@ -98,6 +100,12 @@ export function EventsScreen() {
       {error && (
         <p role="alert" className="mb-4 rounded-lg bg-rose-soft px-4 py-3 text-sm font-medium text-rose">
           {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="animate-pop mb-4 flex items-center gap-2 rounded-lg bg-pine-soft px-4 py-3 text-sm font-medium text-pine">
+          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+          {notice}
         </p>
       )}
 
@@ -115,16 +123,16 @@ export function EventsScreen() {
             return (
               <li key={e.id} className={cn(card, "animate-rise grid gap-5 p-5 sm:p-6 md:grid-cols-[7rem_minmax(0,1fr)_auto]")} style={{ "--i": i + 2 } as React.CSSProperties}>
                 <div className="figures">
-                  <p className="text-sm font-semibold text-brand">{formatDay(e.start_time).split(",")[0]}</p>
+                  <p className="text-sm font-semibold text-brand-ink">{formatDay(e.start_time).split(",")[0]}</p>
                   <p className="font-display text-[1.75rem] font-semibold leading-none">{new Date(e.start_time).getDate()}</p>
                   <p className="mt-1 text-sm text-muted">{new Date(e.start_time).toLocaleString("en-PH", { month: "short", year: "numeric" })}</p>
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-ink-soft">{e.category}</span>
+                    {e.category && <span className="text-sm font-medium text-ink-soft">{e.category}</span>}
                     <StatusBadge status={e.status} />
                     {open && (
-                      <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand">
+                      <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-ink">
                         <span className="live-dot" aria-hidden="true" /> Open now
                       </span>
                     )}
@@ -141,7 +149,7 @@ export function EventsScreen() {
                     </span>
                     {session && <span>Late after {session.grace_period_mins} min grace</span>}
                     <span>{plural(e.sessions?.length ?? 0, "session")}</span>
-                    <span className="font-medium text-ink-soft">{plural(counts.get(e.id) ?? 0, "check-in")}</span>
+                    <span className="font-medium text-ink-soft">{plural(counts.get(e.id) ?? 0, "time-in")}</span>
                   </p>
                 </div>
                 <div className="flex flex-wrap items-start gap-2 md:flex-col md:items-stretch">
@@ -154,7 +162,7 @@ export function EventsScreen() {
                       type="button"
                       disabled={pending === e.id}
                       onClick={() => setStatus(e, "published")}
-                      className={cn(btn.small, "border-brand bg-brand text-white hover:bg-brand-dark hover:text-white")}
+                      className={cn(btn.small, "border-brand bg-brand text-ink hover:border-brand-dark hover:bg-brand-dark hover:text-ink")}
                     >
                       {e.status === "cancelled" ? "Restore & publish" : "Publish"}
                     </button>
@@ -164,12 +172,37 @@ export function EventsScreen() {
                       Cancel event
                     </button>
                   )}
+                  <button
+                    type="button"
+                    disabled={pending === e.id}
+                    onClick={() => {
+                      setError(null);
+                      setNotice(null);
+                      setDeleting(e);
+                    }}
+                    aria-label={`Delete ${e.title}`}
+                    className={cn(btn.small, "text-rose hover:border-rose hover:bg-rose-soft hover:text-rose")}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    Delete
+                  </button>
                 </div>
               </li>
             );
           })}
         </ul>
       )}
+
+      <DeleteEventModal
+        event={deleting}
+        timeIns={deleting ? counts.get(deleting.id) ?? 0 : 0}
+        onClose={() => setDeleting(null)}
+        onDeleted={async (title, kept) => {
+          setDeleting(null);
+          setNotice(`Deleted “${title}”.${kept ? ` Its ${plural(kept, "attendance record")} stay in Attendance records.` : ""}`);
+          await refreshEvents();
+        }}
+      />
 
       <NewEventModal
         open={creating}
@@ -181,6 +214,87 @@ export function EventsScreen() {
         }}
       />
     </>
+  );
+}
+
+/** Confirms before deleting: names the event, warns when it is open, and says what happens to its records. */
+function DeleteEventModal({
+  event,
+  timeIns,
+  onClose,
+  onDeleted,
+}: {
+  event: BAEvent | null;
+  timeIns: number;
+  onClose: () => void;
+  onDeleted: (title: string, recordsKept: number) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastId, setLastId] = useState<string | null>(null);
+  if ((event?.id ?? null) !== lastId) {
+    setLastId(event?.id ?? null);
+    setError(null);
+    setBusy(false);
+  }
+  const open = !!event && event.status === "published" && event.sessions?.some((s) => sessionState(s) === "open");
+
+  const confirm = async () => {
+    if (!event || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await api<{ recordsKept: number }>(`/api/events/${event.id}`, { method: "DELETE" });
+      onDeleted(event.title, data.recordsKept);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't delete the event. Try again.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={!!event}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+      size="md"
+      title="Delete this event?"
+      description={event ? `“${event.title}” · ${formatDay(event.start_time)}, ${formatTime(event.start_time)}` : undefined}
+    >
+      <div className="space-y-4 text-sm leading-relaxed text-ink-soft">
+        {error && (
+          <p role="alert" className="rounded-lg bg-rose-soft px-3 py-2.5 font-medium text-rose">
+            {error}
+          </p>
+        )}
+        {open && (
+          <p className="flex items-start gap-2 rounded-lg bg-brass-soft px-3 py-2.5 font-medium text-brass">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            This event is taking attendance right now. Scans for it will stop working immediately.
+          </p>
+        )}
+        <ul className="list-disc space-y-1 pl-5">
+          <li>The event is removed from the list, the scanner and the student pass page.</li>
+          <li>Passes already shown or downloaded for it will no longer be accepted.</li>
+          <li>
+            {timeIns > 0
+              ? `Its ${plural(timeIns, "time-in")} and any time-outs stay in Attendance records and reports.`
+              : "It has no attendance records."}
+          </li>
+        </ul>
+        <p className="font-medium text-ink">This can’t be undone. To hide an event without deleting it, cancel or unpublish it instead.</p>
+      </div>
+      <div className="mt-6 flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:justify-end">
+        <button type="button" onClick={onClose} disabled={busy} className={btn.secondary}>
+          Keep event
+        </button>
+        <button type="button" onClick={confirm} disabled={busy} className={btn.dangerSolid}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Trash2 className="h-4 w-4" aria-hidden="true" />}
+          {busy ? "Deleting…" : "Delete event"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -204,13 +318,10 @@ function defaults() {
   return {
     title: "",
     description: "",
-    category: "Seminar" as EventCategory,
     venue: "",
     start: localInput(start),
     end: localInput(end),
-    sessionTitle: "Main session",
     gracePeriodMins: "15",
-    minDurationMins: "60",
     publish: true,
   };
 }
@@ -227,52 +338,30 @@ function NewEventModal({ open, onClose, onCreated }: { open: boolean; onClose: (
     setErrors((e) => ({ ...e, [k]: undefined, form: undefined }));
   };
 
-  const validate = (): FormErrors => {
-    const e: FormErrors = {};
-    if (f.title.trim().length < 5) e.title = "Use a descriptive title of at least 5 characters.";
-    if (f.description.trim().length < 10) e.description = "Add a short description (at least 10 characters).";
-    if (f.venue.trim().length < 3) e.venue = "Enter a venue.";
-    if (f.sessionTitle.trim().length < 3) e.sessionTitle = "Name the session.";
-    const s = new Date(f.start).getTime();
-    const en = new Date(f.end).getTime();
-    if (!f.start || Number.isNaN(s)) e.start = "Choose a start date and time.";
-    else if (s < Date.now() - 86400000) e.start = "The start can't be in the past.";
-    if (!f.end || Number.isNaN(en)) e.end = "Choose an end date and time.";
-    else if (!e.start && en <= s) e.end = "The end must be after the start.";
-    const grace = Number(f.gracePeriodMins);
-    if (f.gracePeriodMins === "" || !Number.isInteger(grace) || grace < 0 || grace > 120) e.gracePeriodMins = "Use whole minutes from 0 to 120.";
-    const min = Number(f.minDurationMins);
-    if (f.minDurationMins === "" || !Number.isInteger(min) || min < 1) e.minDurationMins = "Enter whole minutes, at least 1.";
-    else if (!e.start && !e.end && min > (en - s) / 60000) e.minDurationMins = "This is longer than the event itself.";
-    return e;
-  };
+  /** The same schema the API checks, so the form and the server never disagree. */
+  const payload = () => ({
+    title: f.title,
+    description: f.description,
+    venue: f.venue,
+    start: f.start ? withOffset(f.start) : "",
+    end: f.end ? withOffset(f.end) : "",
+    gracePeriodMins: f.gracePeriodMins.trim() === "" ? Number.NaN : Number(f.gracePeriodMins),
+    publish: f.publish,
+  });
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (saving) return;
-    const e = validate();
-    setErrors(e);
-    if (Object.keys(e).length) {
+    const result = eventInputSchema.safeParse(payload());
+    if (!result.success) {
+      setErrors(fieldErrors(result.error));
       requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="dialog"] [aria-invalid="true"]')?.focus());
       return;
     }
+    setErrors({});
     setSaving(true);
     try {
-      await api("/api/events", {
-        method: "POST",
-        json: {
-          title: f.title.trim(),
-          description: f.description.trim(),
-          category: f.category,
-          venue: f.venue.trim(),
-          start: withOffset(f.start),
-          end: withOffset(f.end),
-          sessionTitle: f.sessionTitle.trim(),
-          gracePeriodMins: Number(f.gracePeriodMins),
-          minDurationMins: Number(f.minDurationMins),
-          publish: f.publish,
-        },
-      });
+      await api("/api/events", { method: "POST", json: result.data });
       setF(defaults());
       onCreated();
     } catch (err) {
@@ -284,22 +373,15 @@ function NewEventModal({ open, onClose, onCreated }: { open: boolean; onClose: (
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="New event" description="Set the schedule and the attendance rules. Check-in opens an hour before the start.">
+    <Modal open={open} onClose={onClose} size="lg" title="New event" description="Time-in opens at the start and time-out opens near the end. Students who time in after the grace period are marked late.">
       <form onSubmit={submit} noValidate className="space-y-5">
         {errors.form && (
           <p role="alert" className="rounded-lg bg-rose-soft px-3 py-2.5 text-sm font-medium text-rose">
             {errors.form}
           </p>
         )}
-        <Field label="Title" required maxLength={120} placeholder="BA International Business Forum 2026" value={f.title} error={errors.title} onChange={(e) => set("title", e.target.value)} />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField label="Category" value={f.category} onChange={(e) => set("category", e.target.value as EventCategory)}>
-            {CATEGORIES.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </SelectField>
-          <Field label="Venue" required maxLength={120} placeholder="Main University Auditorium" value={f.venue} error={errors.venue} onChange={(e) => set("venue", e.target.value)} />
-        </div>
+        <Field label="Title" required maxLength={120} autoComplete="off" value={f.title} error={errors.title} onChange={(e) => set("title", e.target.value)} />
+        <Field label="Venue" required maxLength={120} autoComplete="off" value={f.venue} error={errors.venue} onChange={(e) => set("venue", e.target.value)} />
         <TextAreaField
           label="Description"
           required
@@ -314,31 +396,21 @@ function NewEventModal({ open, onClose, onCreated }: { open: boolean; onClose: (
           <Field label="Starts" required type="datetime-local" value={f.start} error={errors.start} onChange={(e) => set("start", e.target.value)} />
           <Field label="Ends" required type="datetime-local" value={f.end} error={errors.end} hint="Same day; split longer events." onChange={(e) => set("end", e.target.value)} />
         </div>
-        <fieldset className="grid gap-4 rounded-xl bg-paper p-4 sm:grid-cols-3">
-          <legend className="sr-only">Attendance rules</legend>
-          <Field label="Session name" required value={f.sessionTitle} error={errors.sessionTitle} onChange={(e) => set("sessionTitle", e.target.value)} />
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Grace period (min)"
+            required
             type="number"
             inputMode="numeric"
             min={0}
             max={120}
+            step={1}
             value={f.gracePeriodMins}
             error={errors.gracePeriodMins}
-            hint="Check-ins after this count as late."
+            hint="Minutes after the start before a time-in counts as late."
             onChange={(e) => set("gracePeriodMins", e.target.value)}
           />
-          <Field
-            label="Minimum stay (min)"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            value={f.minDurationMins}
-            error={errors.minDurationMins}
-            hint="Needed for a certificate."
-            onChange={(e) => set("minDurationMins", e.target.value)}
-          />
-        </fieldset>
+        </div>
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" checked={f.publish} onChange={(e) => set("publish", e.target.checked)} className="mt-0.5 h-4 w-4 accent-brand" />
           <span>

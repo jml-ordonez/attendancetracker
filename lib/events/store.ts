@@ -138,6 +138,13 @@ export function addEvent(event: BAEvent): BAEvent {
   return event;
 }
 
+/** Removes an event and its sessions. Attendance records keep their own copy of the title. */
+export function deleteEvent(id: string): BAEvent | null {
+  const index = g.__ba_events!.findIndex((e) => e.id === id);
+  if (index < 0) return null;
+  return g.__ba_events!.splice(index, 1)[0];
+}
+
 export function setEventStatus(id: string, status: EventStatus): BAEvent | null {
   const event = getEvent(id);
   if (!event) return null;

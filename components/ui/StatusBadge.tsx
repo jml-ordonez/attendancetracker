@@ -6,10 +6,10 @@ const STYLES: Record<string, [string, string]> = {
   present: ["bg-pine-soft text-pine", "Present"],
   published: ["bg-pine-soft text-pine", "Published"],
   success: ["bg-pine-soft text-pine", "Success"],
-  checked_out: ["bg-sky-soft text-sky", "Checked out"],
+  checked_out: ["bg-sky-soft text-sky", "Timed out"],
   late: ["bg-brass-soft text-brass", "Late"],
   left_early: ["bg-brass-soft text-brass", "Left early"],
-  excused: ["bg-brand-soft text-brand-dark", "Excused"],
+  excused: ["bg-brand-soft text-brand-ink", "Excused"],
   draft: ["bg-paper text-ink-soft", "Draft"],
   cancelled: ["bg-rose-soft text-rose", "Cancelled"],
   absent: ["bg-rose-soft text-rose", "Absent"],
@@ -21,7 +21,7 @@ export function StatusBadge({ status, label, className }: { status: string; labe
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-xs font-medium",
+        "inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-xs font-semibold ring-1 ring-inset ring-current/15",
         styles,
         className
       )}

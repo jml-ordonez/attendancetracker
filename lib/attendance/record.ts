@@ -4,8 +4,14 @@ import { evaluateAttendance } from "@/lib/rules/attendance-rules";
 import { findSession } from "@/lib/events/store";
 import { addScan, consumeToken, findScan } from "@/lib/attendance/store";
 
-/** How early before the time-in window a student may check in. */
+/** How early before the time-in window a student may time in. */
 export const CHECK_IN_OPENS_EARLY_MINS = 60;
+
+/**
+ * With one pass for time-in and time-out, a second scan this soon after
+ * timing in is treated as a repeat at the door, not a time-out.
+ */
+export const MIN_MINS_BEFORE_CHECKOUT = 5;
 
 const TIME_ZONE = process.env.APP_TIMEZONE || "Asia/Manila";
 
@@ -60,15 +66,37 @@ function fail(status: ScanVerificationResult["status"], message: string, student
 /**
  * The single attendance pipeline for QR scans and manual entries: checks the
  * session is open, rejects reused tokens and duplicate scans, classifies the
- * scan (on time / late, checked out / left early) from the session's schedule
+ * scan (on time / late, timed out / left early) from the session's schedule
  * and grace period, and records it.
  *
  * Synchronous on purpose: with no awaits between the duplicate check and the
  * insert, two scans of the same pass cannot both get through.
  */
 export function recordAttendance(input: RecordAttendanceInput): RecordAttendanceResult {
-  const { student, purpose, officer, method } = input;
+  const { student, officer, method } = input;
   const now = input.now ?? new Date();
+
+  // One pass for both: time in if there is no time-in yet, otherwise time out.
+  let purpose = input.purpose;
+  if (purpose === "attendance") {
+    const timeIn = findScan(student.idNumber, input.sessionId, "time_in");
+    const timeOut = findScan(student.idNumber, input.sessionId, "time_out");
+    if (timeIn && timeOut) {
+      return fail(
+        "DUPLICATE_SCAN",
+        `${timeIn.studentName} has already completed attendance: timed in at ${clockTime(timeIn.timestamp)} and out at ${clockTime(timeOut.timestamp)}.`,
+        student
+      );
+    }
+    if (timeIn && now.getTime() - new Date(timeIn.timestamp).getTime() < MIN_MINS_BEFORE_CHECKOUT * 60000) {
+      return fail(
+        "DUPLICATE_SCAN",
+        `${timeIn.studentName} already timed in at ${clockTime(timeIn.timestamp)}. Scan the same pass again when leaving to time out.`,
+        student
+      );
+    }
+    purpose = timeIn ? "time_out" : "time_in";
+  }
 
   if (purpose !== "time_in" && purpose !== "time_out") {
     return fail("TOKEN_INVALID", "This pass type is not accepted at the door.", student);
@@ -87,10 +115,10 @@ export function recordAttendance(input: RecordAttendanceInput): RecordAttendance
 
   if (purpose === "time_in") {
     if (now < opensAt) {
-      return fail("WINDOW_CLOSED", `Check-in opens at ${clockDateTime(opensAt.toISOString())}.`, student);
+      return fail("WINDOW_CLOSED", `Time-in opens at ${clockDateTime(opensAt.toISOString())}.`, student);
     }
     if (now > endsAt) {
-      return fail("WINDOW_CLOSED", `This session ended at ${clockTime(endsAt)}. Check-in is closed.`, student);
+      return fail("WINDOW_CLOSED", `This session ended at ${clockTime(endsAt)}. Time-in is closed.`, student);
     }
   }
 
@@ -98,12 +126,12 @@ export function recordAttendance(input: RecordAttendanceInput): RecordAttendance
   const timeOut = findScan(student.idNumber, session.id, "time_out");
 
   if (purpose === "time_in" && timeIn) {
-    return fail("DUPLICATE_SCAN", `${student.name} already checked in at ${clockTime(timeIn.timestamp)}.`, student);
+    return fail("DUPLICATE_SCAN", `${student.name} already timed in at ${clockTime(timeIn.timestamp)}.`, student);
   }
   if (purpose === "time_out") {
-    if (!timeIn) return fail("STUDENT_INELIGIBLE", "No check-in on record for this session, so there is nothing to check out.", student);
+    if (!timeIn) return fail("STUDENT_INELIGIBLE", "No time-in on record for this session, so there is nothing to time out.", student);
     if (timeOut) {
-      return fail("DUPLICATE_SCAN", `${student.name} already checked out at ${clockTime(timeOut.timestamp)}.`, student);
+      return fail("DUPLICATE_SCAN", `${student.name} already timed out at ${clockTime(timeOut.timestamp)}.`, student);
     }
   }
 
@@ -140,8 +168,8 @@ export function recordAttendance(input: RecordAttendanceInput): RecordAttendance
       success: true,
       status: result.isLate ? "SUCCESS_LATE" : "SUCCESS_ON_TIME",
       message: result.isLate
-        ? `Checked in late. The grace period ended at ${clockTime(new Date(schedule.timeInStart.getTime() + session.grace_period_mins * 60000))}.`
-        : "Checked in on time.",
+        ? `Timed in late. The grace period ended at ${clockTime(new Date(schedule.timeInStart.getTime() + session.grace_period_mins * 60000))}.`
+        : "Timed in on time.",
       timestamp: scan.timestamp,
       details: {
         studentName: student.name,
@@ -159,7 +187,7 @@ export function recordAttendance(input: RecordAttendanceInput): RecordAttendance
   const result = evaluateAttendance(new Date(timeIn!.timestamp), now, schedule);
   const scan = addScan({
     ...common,
-    // Keep the identity from the time-in scan so a manual check-out can't rename the student.
+    // Keep the identity from the time-in scan so a manual time-out can't rename the student.
     studentName: timeIn!.studentName,
     majorCode: timeIn!.majorCode,
     section: timeIn!.section,
@@ -171,8 +199,8 @@ export function recordAttendance(input: RecordAttendanceInput): RecordAttendance
     success: true,
     status: result.isEarlyDeparture ? "SUCCESS_CHECKOUT_EARLY" : "SUCCESS_CHECKOUT",
     message: result.isEarlyDeparture
-      ? `Checked out before ${clockTime(schedule.timeOutStart)}: recorded as left early.`
-      : "Checked out.",
+      ? `Timed out before ${clockTime(schedule.timeOutStart)}: recorded as left early.`
+      : "Timed out.",
     timestamp: scan.timestamp,
     details: {
       studentName: timeIn!.studentName,

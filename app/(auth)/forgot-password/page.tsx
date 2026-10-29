@@ -36,7 +36,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-paper p-5">
+    <div className="flex min-h-dvh items-center justify-center bg-card p-5">
       <div className="animate-rise w-full max-w-md rounded-2xl border border-line bg-card p-7 sm:p-9">
         <BrandMark className="h-11 w-11" />
         {state === "sent" ? (

@@ -13,6 +13,7 @@ export function PageHeader({
   return (
     <div className="animate-rise mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
+        <span className="mb-3 block h-1 w-10 rounded-full bg-brand" aria-hidden="true" />
         <h1 className="font-display text-[1.75rem] font-semibold leading-tight tracking-tight text-ink sm:text-[2rem]">
           {title}
         </h1>

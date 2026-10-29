@@ -1,20 +1,20 @@
 "use client";
 
-import React, { useLayoutEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Field, SelectField } from "@/components/ui/Field";
 import { btn } from "@/components/ui/styles";
 import { getRegisteredStudent, registerStudent } from "@/lib/auth/session";
 import {
-  NAME_PATTERN,
-  SECTION_PATTERN,
-  STUDENT_ID_PATTERN,
-  UA_EMAIL_PATTERN,
   YEAR_LEVELS,
   deriveMajorFromSection,
-  sectionMatchesYear,
+  fieldErrors,
+  isKnownSection,
+  sectionsForYear,
+  studentRegistrationSchema,
+  yearLevelForSection,
 } from "@/lib/validation";
 
 interface StudentRegisterModalProps {
@@ -25,14 +25,36 @@ interface StudentRegisterModalProps {
   goToPass?: boolean;
 }
 
-function suggestSection(yearLevel: string, currentSec = "MM-1A"): string {
-  const year = Math.max(1, YEAR_LEVELS.indexOf(yearLevel as (typeof YEAR_LEVELS)[number]) + 1);
-  const prefix = currentSec.match(/^(?:BA-)?([A-Z]+)/)?.[1] || "MM";
-  const suffix = currentSec.match(/[A-Z0-9]$/)?.[0] || "A";
-  return `${prefix}-${year}${suffix}`;
+function normalizeStudentId(raw: string): string {
+  const upper = raw.trim().toUpperCase();
+  if (upper.endsWith("-BA")) return upper;
+  const digitsOnly = upper.replace(/[\s-]+/g, "");
+  if (/^\d{10}$/.test(digitsOnly)) return digitsOnly;
+  return upper;
 }
 
-type Errors = Partial<Record<"firstName" | "lastName" | "studentIdNumber" | "email" | "section" | "form", string>>;
+function normalizeEmail(raw: string): string {
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed) return "";
+  if (!trimmed.includes("@") && /^[a-z0-9._%+-]+$/i.test(trimmed)) {
+    return `${trimmed}@ua.edu.ph`;
+  }
+  return trimmed;
+}
+
+type FieldKey = "firstName" | "lastName" | "studentIdNumber" | "email" | "section";
+type Values = Record<FieldKey, string>;
+type Errors = Partial<Record<FieldKey | "form", string>>;
+
+/** Same rules as the pass API (see `studentRegistrationSchema`), after normalizing the ID and email. */
+function validateValues(vals: Values): Errors {
+  const result = studentRegistrationSchema.safeParse({
+    ...vals,
+    studentIdNumber: normalizeStudentId(vals.studentIdNumber),
+    email: normalizeEmail(vals.email),
+  });
+  return result.success ? {} : fieldErrors(result.error);
+}
 
 export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = true }: StudentRegisterModalProps) {
   const router = useRouter();
@@ -40,25 +62,39 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
   const [lastName, setLastName] = useState("");
   const [studentIdNumber, setStudentIdNumber] = useState("");
   const [email, setEmail] = useState("");
-  const [yearLevel, setYearLevel] = useState<string>("1st Year");
   const [section, setSection] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
 
+  // Warm the student pass route while the person fills in their details.
+  useEffect(() => {
+    if (isOpen && goToPass) router.prefetch("/student/qr");
+  }, [isOpen, goToPass, router]);
+
   // Prefill when the dialog opens over an existing registration.
   const [wasOpen, setWasOpen] = useState(false);
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen);
-    const existing = isOpen ? getRegisteredStudent() : null;
-    if (isOpen) setIsEdit(!!existing);
-    if (existing) {
-      setFirstName(existing.firstName);
-      setLastName(existing.lastName);
-      setStudentIdNumber(existing.studentIdNumber);
-      setEmail(existing.email);
-      setYearLevel(existing.yearLevel);
-      setSection(existing.section);
+    if (isOpen) {
+      setIsSubmitting(false);
+      setErrors({});
+      const existing = getRegisteredStudent();
+      setIsEdit(!!existing);
+      if (existing) {
+        setFirstName(existing.firstName);
+        setLastName(existing.lastName);
+        setStudentIdNumber(existing.studentIdNumber);
+        setEmail(existing.email);
+        // A section saved before the section list changed has to be chosen again.
+        if (isKnownSection(existing.section)) setSection(existing.section.toUpperCase());
+        else {
+          setSection("");
+          setErrors({ section: "The section list has changed. Select your section again." });
+        }
+      } else {
+        setSection("");
+      }
     }
   }
 
@@ -71,47 +107,26 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
     []
   );
 
-  const clear = (key: keyof Errors) => setErrors((prev) => (prev[key] || prev.form ? { ...prev, [key]: undefined, form: undefined } : prev));
+  const clear = (key: keyof Errors) =>
+    setErrors((prev) => (prev[key] || prev.form ? { ...prev, [key]: undefined, form: undefined } : prev));
 
-  const validate = (): Errors => {
-    const errs: Errors = {};
-    const first = firstName.trim();
-    const last = lastName.trim();
-    const sid = studentIdNumber.trim().toUpperCase();
-    const mail = email.trim().toLowerCase();
-    const sec = section.trim().toUpperCase();
-
-    if (!first) errs.firstName = "Enter your first name.";
-    else if (first.length > 40 || !NAME_PATTERN.test(first)) errs.firstName = "Use letters only (spaces, hyphens and apostrophes allowed).";
-
-    if (!last) errs.lastName = "Enter your last name.";
-    else if (last.length > 40 || !NAME_PATTERN.test(last)) errs.lastName = "Use letters only (spaces, hyphens and apostrophes allowed).";
-
-    if (!sid) errs.studentIdNumber = "Enter your student ID number.";
-    else if (!STUDENT_ID_PATTERN.test(sid)) errs.studentIdNumber = "Use the format e.g 2022001234.";
-    else {
-      const digits = sid.replace(/\D/g, "");
-      const year = Number(digits.slice(0, 4));
-      if (year < 2000 || year > new Date().getFullYear()) {
-        errs.studentIdNumber = "The year at the start of your ID isn't valid.";
-      }
-    }
-
-    if (!mail) errs.email = "Enter your university email.";
-    else if (!UA_EMAIL_PATTERN.test(mail)) errs.email = "Enter a valid university email ending with @ua.edu.ph.";
-
-    if (!sec) errs.section = "Enter your section.";
-    else if (!SECTION_PATTERN.test(sec)) errs.section = "Use the format MM-1A (program, year and section).";
-    else if (!sectionMatchesYear(sec, yearLevel)) errs.section = `The year in your section doesn't match ${yearLevel}.`;
-
-    return errs;
+  const handleFieldBlur = (field: FieldKey, override?: Partial<Values>) => {
+    const errs = validateValues({ firstName, lastName, studentIdNumber, email, section, ...override });
+    setErrors((prev) => ({ ...prev, [field]: errs[field] }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
 
-    const errs = validate();
+    const sid = normalizeStudentId(studentIdNumber);
+    const mail = normalizeEmail(email);
+    const sec = section.trim().toUpperCase();
+
+    if (sid !== studentIdNumber) setStudentIdNumber(sid);
+    if (mail !== email) setEmail(mail);
+
+    const errs = validateValues({ firstName, lastName, studentIdNumber: sid, email: mail, section: sec });
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
       requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="dialog"] [aria-invalid="true"]')?.focus());
@@ -120,129 +135,188 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
 
     setIsSubmitting(true);
     try {
-      const sid = studentIdNumber.trim().toUpperCase();
-      const mail = email.trim().toLowerCase();
-      const sec = section.trim().toUpperCase();
-      const derivedMajor = deriveMajorFromSection(sec);
-
       registerStudent({
         firstName: firstName.trim().replace(/\s+/g, " "),
         lastName: lastName.trim().replace(/\s+/g, " "),
         studentIdNumber: sid,
         email: mail,
-        majorCode: derivedMajor,
-        yearLevel,
+        // Every section names its program (MM-1A → BSBA-MM).
+        majorCode: deriveMajorFromSection(sec),
+        yearLevel: yearLevelForSection(sec)!,
         section: sec,
       });
       onSuccess?.();
-      onClose();
-      setIsSubmitting(false);
-      if (goToPass) router.push("/student/qr");
+      if (goToPass) {
+        router.push("/student/qr");
+      } else {
+        setIsSubmitting(false);
+        onClose();
+      }
     } catch {
-      setErrors({ form: "We couldn't save your details on this device. Check that private browsing is off, then try again." });
+      setErrors({
+        form: "We couldn't save your details on this device. Check that private browsing is off, then try again.",
+      });
       setIsSubmitting(false);
     }
   };
 
+  const canSuggestEmailDomain =
+    email.trim().length > 0 && !email.includes("@") && /^[a-z0-9._%+-]+$/i.test(email.trim());
+
   return (
     <Modal
       open={isOpen}
-      onClose={onClose}
+      onClose={() => {
+        if (!isSubmitting) onClose();
+      }}
       size="lg"
       title={isEdit ? "Update your details" : "Register for your attendance pass"}
-      description="Enter your details exactly as they appear on your university ID. They are saved on this device only."
+      description="Enter your details once as they appear on your university ID. Your pass stays saved on this device."
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-5">
         {errors.form && (
-          <p role="alert" className="rounded-lg bg-rose-soft px-3 py-2.5 text-sm font-medium text-rose">
-            {errors.form}
-          </p>
+          <div role="alert" className="flex items-start gap-2.5 rounded-lg bg-rose-soft px-3.5 py-2.5 text-sm font-medium text-rose">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>{errors.form}</span>
+          </div>
         )}
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="First name" required autoComplete="given-name" maxLength={40} value={firstName} error={errors.firstName} onChange={(e) => { setFirstName(e.target.value); clear("firstName"); }} />
-          <Field label="Last name" required autoComplete="family-name" maxLength={40} value={lastName} error={errors.lastName} onChange={(e) => { setLastName(e.target.value); clear("lastName"); }} />
+          <Field
+            label="First name"
+            name="firstName"
+            required
+            autoComplete="given-name"
+            maxLength={40}
+            placeholder="e.g. Juan"
+            disabled={isSubmitting}
+            value={firstName}
+            error={errors.firstName}
+            onBlur={() => firstName.trim() && handleFieldBlur("firstName")}
+            onChange={(e) => {
+              setFirstName(e.target.value);
+              clear("firstName");
+            }}
+          />
+          <Field
+            label="Last name"
+            name="lastName"
+            required
+            autoComplete="family-name"
+            maxLength={40}
+            placeholder="e.g. Dela Cruz"
+            disabled={isSubmitting}
+            value={lastName}
+            error={errors.lastName}
+            onBlur={() => lastName.trim() && handleFieldBlur("lastName")}
+            onChange={(e) => {
+              setLastName(e.target.value);
+              clear("lastName");
+            }}
+          />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             label="Student ID number"
+            name="studentIdNumber"
             required
             autoComplete="off"
+            inputMode="numeric"
             autoCapitalize="characters"
-            placeholder="e.g 2022001234"
+            placeholder="e.g. 2022001234"
             maxLength={15}
+            disabled={isSubmitting}
             value={studentIdNumber}
             error={errors.studentIdNumber}
-            hint="Printed on your university ID."
+            hint="10-digit ID printed on your university ID."
+            onBlur={() => {
+              if (!studentIdNumber.trim()) return;
+              const normalized = normalizeStudentId(studentIdNumber);
+              if (normalized !== studentIdNumber) setStudentIdNumber(normalized);
+              handleFieldBlur("studentIdNumber", { studentIdNumber: normalized });
+            }}
             onChange={(e) => {
               setStudentIdNumber(e.target.value.toUpperCase());
               clear("studentIdNumber");
             }}
           />
-          <Field
-            label="University email"
-            required
-            type="email"
-            autoComplete="email"
-            inputMode="email"
-            placeholder="name@ua.edu.ph"
-            value={email}
-            error={errors.email}
-            hint="Must end with @ua.edu.ph"
-            onChange={(e) => {
-              setEmail(e.target.value);
-              clear("email");
-            }}
-          />
+          <div>
+            <Field
+              label="University email"
+              name="email"
+              required
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="name@ua.edu.ph"
+              disabled={isSubmitting}
+              value={email}
+              error={errors.email}
+              hint={!canSuggestEmailDomain ? "Must end with @ua.edu.ph" : undefined}
+              onBlur={() => {
+                if (!email.trim()) return;
+                const normalized = normalizeEmail(email);
+                if (normalized !== email) setEmail(normalized);
+                handleFieldBlur("email", { email: normalized });
+              }}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                clear("email");
+              }}
+            />
+            {canSuggestEmailDomain && !errors.email && (
+              <button
+                type="button"
+                onClick={() => {
+                  const completed = `${email.trim().toLowerCase()}@ua.edu.ph`;
+                  setEmail(completed);
+                  clear("email");
+                }}
+                className="press mt-1.5 inline-flex items-center gap-1 rounded-md bg-brand-tint px-2 py-0.5 text-xs font-semibold text-brand-ink hover:bg-brand-soft"
+              >
+                Use {email.trim().toLowerCase()}@ua.edu.ph
+              </button>
+            )}
+          </div>
         </div>
 
-        <fieldset className="grid gap-4 rounded-xl bg-paper p-4 sm:grid-cols-2">
-          <legend className="sr-only">Academic details</legend>
-          <SelectField
-            label="Year level"
-            value={yearLevel}
-            onChange={(e) => {
-              const newYear = e.target.value;
-              setYearLevel(newYear);
-              setSection((prev) => (prev ? suggestSection(newYear, prev) : ""));
-              clear("section");
-            }}
-          >
-            {YEAR_LEVELS.map((y) => (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            ))}
-          </SelectField>
-          <Field
-            label="Section"
-            required
-            autoComplete="off"
-            placeholder="e.g MM-1A"
-            maxLength={10}
-            value={section}
-            error={errors.section}
-            onChange={(e) => {
-              const val = e.target.value.toUpperCase();
-              setSection(val);
-              clear("section");
-              const match = val.match(/^[A-Z]+-([1-4])/);
-              if (match) {
-                const yrNum = Number(match[1]);
-                if (yrNum >= 1 && yrNum <= 4) {
-                  setYearLevel(YEAR_LEVELS[yrNum - 1]);
-                }
-              }
-            }}
-          />
-        </fieldset>
+        <SelectField
+          label="Section"
+          name="section"
+          required
+          disabled={isSubmitting}
+          value={section}
+          error={errors.section}
+          hint="Your year level is taken from your section."
+          onChange={(e) => {
+            const next = e.target.value;
+            setSection(next);
+            handleFieldBlur("section", { section: next });
+          }}
+        >
+          <option value="" disabled>
+            Select your section
+          </option>
+          {YEAR_LEVELS.map((year) => (
+            <optgroup key={year} label={year}>
+              {sectionsForYear(year).map((sec) => (
+                <option key={sec} value={sec}>
+                  {sec}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </SelectField>
 
-        <button type="submit" disabled={isSubmitting} className={`${btn.primary} w-full`}>
+        <button type="submit" disabled={isSubmitting} className={`${btn.primary} h-12 w-full text-[15px]`}>
           {isSubmitting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Saving…
+              {goToPass ? "Opening your pass…" : "Saving…"}
             </>
           ) : (
             <>
@@ -255,4 +329,3 @@ export function StudentRegisterModal({ isOpen, onClose, onSuccess, goToPass = tr
     </Modal>
   );
 }
-

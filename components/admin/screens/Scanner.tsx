@@ -45,7 +45,7 @@ export function ScannerScreen() {
     <>
       <PageHeader
         title="Scanner"
-        description="Hold each student’s pass up to the camera. It is decrypted, checked against the session schedule and recorded in about a second."
+        description="Hold each student’s pass up to the camera. The first scan checks them in and the same pass scanned later checks them out, each checked against the session schedule."
       />
 
       <div className="space-y-5">
@@ -57,13 +57,13 @@ export function ScannerScreen() {
           )}
           <div>
             <p className="mb-1.5 text-sm font-medium text-ink" id="purpose-label">
-              Scanning for
+              Manual entry records
             </p>
             <div role="radiogroup" aria-labelledby="purpose-label" className="grid grid-cols-2 gap-1 rounded-lg bg-paper p-1">
               {(
                 [
-                  ["time_in", "Check-in", LogIn],
-                  ["time_out", "Check-out", LogOut],
+                  ["time_in", "Time-in", LogIn],
+                  ["time_out", "Time-out", LogOut],
                 ] as const
               ).map(([value, label, Icon]) => (
                 <button
@@ -74,7 +74,7 @@ export function ScannerScreen() {
                   onClick={() => setPurpose(value)}
                   className={cn(
                     "press flex h-10 items-center justify-center gap-2 rounded-md px-5 text-sm font-semibold",
-                    purpose === value ? "bg-brand text-white shadow-sm" : "text-ink-soft hover:text-ink"
+                    purpose === value ? "bg-brand text-ink shadow-sm" : "text-ink-soft hover:text-ink"
                   )}
                 >
                   <Icon className="h-4 w-4" aria-hidden="true" />
@@ -88,14 +88,14 @@ export function ScannerScreen() {
             <div className="figures flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-soft lg:col-span-2">
               <span>{pick.event.venue}</span>
               <span>
-                Check-in {formatTime(pick.session.time_in_start)}–{formatTime(pick.session.time_in_end)}
+                Time-in {formatTime(pick.session.time_in_start)}–{formatTime(pick.session.time_in_end)}
               </span>
               <span>Late after {formatTime(graceEnds(pick.session).toISOString())}</span>
               <span>
-                Check-out {formatTime(pick.session.time_out_start)}–{formatTime(pick.session.time_out_end)}
+                Time-out {formatTime(pick.session.time_out_start)}–{formatTime(pick.session.time_out_end)}
               </span>
               <span className="font-semibold text-ink">
-                {plural(ins, "check-in")} · {plural(outs, "check-out")}
+                {plural(ins, "time-in")} · {plural(outs, "time-out")}
               </span>
             </div>
           )}
@@ -105,8 +105,8 @@ export function ScannerScreen() {
           <p className="flex items-start gap-2 rounded-lg bg-brass-soft px-4 py-3 text-sm text-brass" role="status">
             <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             {pick.state === "upcoming"
-              ? `This session isn’t open yet. Check-in opens ${OPENS_EARLY_MINS} minutes before it starts, at ${formatDateTime(new Date(new Date(pick.session.time_in_start).getTime() - OPENS_EARLY_MINS * 60000).toISOString())}. Scans before then are refused.`
-              : "This session has ended. Check-ins are refused; check-outs are still accepted."}
+              ? `This session isn’t open yet. Time-in opens ${OPENS_EARLY_MINS} minutes before it starts, at ${formatDateTime(new Date(new Date(pick.session.time_in_start).getTime() - OPENS_EARLY_MINS * 60000).toISOString())}. Scans before then are refused.`
+              : "This session has ended. Time-ins are refused; time-outs are still accepted."}
           </p>
         )}
 
@@ -122,7 +122,6 @@ export function ScannerScreen() {
             <QRScanner
               eventId={pick.event.id}
               sessionId={pick.session.id}
-              purpose={purpose}
               onScanned={(r) => r.success && refreshScans()}
               onOpenManualEntry={() => setManualOpen(true)}
             />

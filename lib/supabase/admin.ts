@@ -1,4 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+let cachedAdminClient: SupabaseClient | null = null;
 
 /**
  * Privileged Service-Role Supabase Client
@@ -8,9 +10,11 @@ import { createClient } from "@supabase/supabase-js";
  * 2. It is exclusively utilized by trusted Next.js Server Actions and Route Handlers for
  *    atomic scan verification, single-use token consumption, and role management.
  */
-export function createAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+export function createAdminClient(): SupabaseClient {
+  if (cachedAdminClient) return cachedAdminClient;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
@@ -18,10 +22,12 @@ export function createAdminClient() {
     );
   }
 
-  return createClient(supabaseUrl, serviceRoleKey, {
+  cachedAdminClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
     },
   });
+
+  return cachedAdminClient;
 }

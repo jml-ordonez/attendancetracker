@@ -5,6 +5,7 @@ import { findScan } from "@/lib/attendance/store";
 import { logAudit } from "@/lib/audit/store";
 import { clientIp, jsonError, parseBody, requireAdmin } from "@/lib/http";
 import {
+  deriveMajorFromSection,
   majorCodeSchema,
   personNameSchema,
   purposeSchema,
@@ -21,16 +22,16 @@ const schema = z
     purpose: purposeSchema,
     studentIdNumber: studentIdSchema,
     reason: reasonSchema,
-    // Needed only for a check-in; a check-out reuses the identity from the check-in.
+    // Needed only for a time-in; a time-out reuses the identity from the time-in.
     studentName: personNameSchema.optional(),
+    /** Optional: derived from the section when left out. */
     majorCode: majorCodeSchema.optional(),
     section: sectionSchema.optional(),
   })
   .superRefine((v, ctx) => {
     if (v.purpose !== "time_in") return;
     if (!v.studentName) ctx.addIssue({ code: "custom", path: ["studentName"], message: "Enter the student's full name." });
-    if (!v.majorCode) ctx.addIssue({ code: "custom", path: ["majorCode"], message: "Choose a program." });
-    if (!v.section) ctx.addIssue({ code: "custom", path: ["section"], message: "Enter the section." });
+    if (!v.section) ctx.addIssue({ code: "custom", path: ["section"], message: "Select the student's section." });
     else if (v.majorCode && !sectionMatchesMajor(v.section, v.majorCode))
       ctx.addIssue({ code: "custom", path: ["section"], message: "The section doesn't belong to the chosen program." });
   });
@@ -50,10 +51,10 @@ export async function POST(request: NextRequest) {
 
   let student;
   if (v.purpose === "time_in") {
-    student = { name: v.studentName!, idNumber: v.studentIdNumber, majorCode: v.majorCode!, section: v.section! };
+    student = { name: v.studentName!, idNumber: v.studentIdNumber, majorCode: v.majorCode ?? deriveMajorFromSection(v.section!), section: v.section! };
   } else {
     const timeIn = findScan(v.studentIdNumber, v.sessionId, "time_in");
-    if (!timeIn) return jsonError(`No check-in on record for ${v.studentIdNumber} in this session.`, 404, { fieldErrors: { studentIdNumber: "No check-in on record for this ID in this session." } });
+    if (!timeIn) return jsonError(`No time-in on record for ${v.studentIdNumber} in this session.`, 404, { fieldErrors: { studentIdNumber: "No time-in on record for this ID in this session." } });
     student = { name: timeIn.studentName, idNumber: v.studentIdNumber, majorCode: timeIn.majorCode, section: timeIn.section };
   }
 
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
     category: "attendance",
     action: result.success ? "manual_entry.recorded" : "manual_entry.rejected",
     summary: result.success
-      ? `Manual ${v.purpose === "time_in" ? "check-in" : "check-out"} for ${student.name} (${student.idNumber})`
+      ? `Manual ${v.purpose === "time_in" ? "time-in" : "time-out"} for ${student.name} (${student.idNumber})`
       : `Manual entry for ${student.idNumber} rejected: ${result.message}`,
     target: result.details?.eventTitle,
     outcome: result.success ? "success" : "failure",

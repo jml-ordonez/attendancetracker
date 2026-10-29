@@ -1,4 +1,5 @@
-export type TokenPurpose = "time_in" | "time_out" | "checkpoint";
+/** "attendance": one pass for the whole session; the scanner decides time-in or time-out. */
+export type TokenPurpose = "time_in" | "time_out" | "checkpoint" | "attendance";
 
 export interface DecryptedQRPayload {
   tid: string;       // Unique Token Identifier (UUIDv4)
@@ -10,7 +11,7 @@ export interface DecryptedQRPayload {
   eid: string;       // Event UUID
   ssid: string;      // Session UUID
   cid?: string;      // Checkpoint UUID (optional)
-  p: TokenPurpose;   // Purpose: time_in, time_out, checkpoint
+  p: TokenPurpose;   // Purpose: time_in, time_out, checkpoint, attendance
   iat: number;       // Issued At (unix timestamp in seconds)
   exp: number;       // Expiry (unix timestamp in seconds)
   nonce: string;     // Cryptographic random nonce

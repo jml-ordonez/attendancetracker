@@ -6,7 +6,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Field, SelectField, TextAreaField } from "@/components/ui/Field";
 import { btn } from "@/components/ui/styles";
 import { api, ApiError } from "@/lib/client/api";
-import { MAJORS, NAME_PATTERN, SECTION_PATTERN, STUDENT_ID_PATTERN, sectionMatchesMajor } from "@/lib/validation";
+import { NAME_PATTERN, SECTIONS, STUDENT_ID_PATTERN, deriveMajorFromSection, isKnownSection } from "@/lib/validation";
 import type { TokenPurpose } from "@/types/qr";
 
 interface ManualEntryModalProps {
@@ -19,9 +19,9 @@ interface ManualEntryModalProps {
   onSuccess?: (message: string) => void;
 }
 
-type Errors = Partial<Record<"studentIdNumber" | "studentName" | "majorCode" | "section" | "reason" | "form", string>>;
+type Errors = Partial<Record<"studentIdNumber" | "studentName" | "section" | "reason" | "form", string>>;
 
-const EMPTY = { studentIdNumber: "", studentName: "", majorCode: "BSBA-MM", section: "", reason: "" };
+const EMPTY = { studentIdNumber: "", studentName: "", section: "", reason: "" };
 
 /** Fallback when a pass can't be scanned. Every entry needs a reason and is written to the audit log. */
 export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionLabel, purpose, onSuccess }: ManualEntryModalProps) {
@@ -50,10 +50,8 @@ export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionL
       const name = form.studentName.trim();
       if (name.length < 2) e.studentName = "Enter the student's full name as printed on their ID.";
       else if (!NAME_PATTERN.test(name)) e.studentName = "Use letters only (spaces, hyphens and apostrophes allowed).";
-      const sec = form.section.trim().toUpperCase();
-      if (!sec) e.section = "Enter the section.";
-      else if (!SECTION_PATTERN.test(sec)) e.section = "Use the format MM-1A.";
-      else if (!sectionMatchesMajor(sec, form.majorCode)) e.section = "This section belongs to a different program.";
+      if (!form.section) e.section = "Select the student's section.";
+      else if (!isKnownSection(form.section)) e.section = "Choose a section from the list.";
     }
     if (form.reason.trim().length < 10) e.reason = "Describe why the pass couldn't be scanned (at least 10 characters).";
     return e;
@@ -78,7 +76,7 @@ export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionL
           purpose,
           studentIdNumber: form.studentIdNumber.trim().toUpperCase(),
           reason: form.reason.trim(),
-          ...(isIn ? { studentName: form.studentName.trim(), majorCode: form.majorCode, section: form.section.trim().toUpperCase() } : {}),
+          ...(isIn ? { studentName: form.studentName.trim(), majorCode: deriveMajorFromSection(form.section), section: form.section } : {}),
         },
       });
       onSuccess?.(`${data.studentName}: ${data.message}`);
@@ -97,7 +95,7 @@ export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionL
       open={isOpen}
       onClose={onClose}
       size="md"
-      title={isIn ? "Manual check-in" : "Manual check-out"}
+      title={isIn ? "Manual time-in" : "Manual time-out"}
       description={`${sessionLabel}. Use only when the pass can't be scanned; the entry and your reason go to the audit log.`}
     >
       <form onSubmit={submit} noValidate className="space-y-5">
@@ -115,7 +113,7 @@ export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionL
           maxLength={15}
           value={form.studentIdNumber}
           error={errors.studentIdNumber}
-          hint={isIn ? "Check it against the student's university ID card." : "The student must already be checked in to this session."}
+          hint={isIn ? "Check it against the student's university ID card." : "The student must already be timed in to this session."}
           onChange={(e) => set("studentIdNumber", e.target.value.toUpperCase())}
         />
 
@@ -130,25 +128,16 @@ export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionL
               error={errors.studentName}
               onChange={(e) => set("studentName", e.target.value)}
             />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <SelectField label="Program" value={form.majorCode} onChange={(e) => set("majorCode", e.target.value)}>
-                {Object.entries(MAJORS).map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name.replace("BSBA in ", "")}
-                  </option>
-                ))}
-              </SelectField>
-              <Field
-                label="Section"
-                required
-                autoComplete="off"
-                placeholder="e.g MM-1A"
-                maxLength={10}
-                value={form.section}
-                error={errors.section}
-                onChange={(e) => set("section", e.target.value.toUpperCase())}
-              />
-            </div>
+            <SelectField label="Section" required value={form.section} error={errors.section} onChange={(e) => set("section", e.target.value)}>
+              <option value="" disabled>
+                Select Section
+              </option>
+              {SECTIONS.map((sec) => (
+                <option key={sec} value={sec}>
+                  {sec}
+                </option>
+              ))}
+            </SelectField>
           </>
         )}
 
@@ -170,7 +159,7 @@ export function ManualEntryModal({ isOpen, onClose, eventId, sessionId, sessionL
           </button>
           <button type="submit" disabled={submitting} className={btn.primary}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-            {submitting ? "Recording…" : isIn ? "Record check-in" : "Record check-out"}
+            {submitting ? "Recording…" : isIn ? "Record time-in" : "Record time-out"}
           </button>
         </div>
       </form>

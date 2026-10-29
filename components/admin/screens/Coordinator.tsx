@@ -22,7 +22,7 @@ type View = "all" | "inside" | "late" | "left_early" | "corrected";
 const STATUS_OPTIONS: [CorrectedStatus, string][] = [
   ["present", "Present"],
   ["late", "Late"],
-  ["checked_out", "Checked out"],
+  ["checked_out", "Timed out"],
   ["left_early", "Left early"],
   ["excused", "Excused"],
 ];
@@ -80,7 +80,7 @@ export function CoordinatorScreen() {
               [
                 ["On the roll", stats.total],
                 ["Still inside", stats.inside],
-                ["Checked out", stats.out],
+                ["Timed out", stats.out],
                 ["Arrived late", stats.late],
                 ["Left early", stats.early],
                 ["Corrected", stats.corrected],
@@ -101,7 +101,11 @@ export function CoordinatorScreen() {
             <h2 id="roll-h" className="text-base font-semibold">
               Session roll
             </h2>
-            <p className="text-sm text-muted">Certificate needs a stay of {formatDuration(minStay)} or an excuse.</p>
+            <p className="text-sm text-muted">
+              {minStay > 0
+                ? `Certificate needs a stay of ${formatDuration(minStay)} or an excuse.`
+                : "Certificate needs a time-in and an on-time time-out, or an excuse."}
+            </p>
           </div>
           <div role="tablist" aria-label="Filter the roll" className="flex flex-wrap gap-1">
             {(
@@ -119,7 +123,7 @@ export function CoordinatorScreen() {
                 type="button"
                 aria-selected={view === value}
                 onClick={() => setView(value)}
-                className={cn("press h-9 rounded-md px-3 text-sm font-semibold", view === value ? "bg-brand-soft text-brand-dark" : "text-ink-soft hover:bg-paper")}
+                className={cn("press h-9 rounded-md px-3 text-sm font-semibold", view === value ? "bg-brand-soft text-brand-ink" : "text-ink-soft hover:bg-paper")}
               >
                 {label}
               </button>
@@ -129,13 +133,13 @@ export function CoordinatorScreen() {
 
         {rows.length === 0 ? (
           <p className="px-6 py-12 text-center text-sm text-ink-soft">
-            {roll.length === 0 ? "No one has checked in to this session yet." : "No students in this group."}
+            {roll.length === 0 ? "No one has timed in to this session yet." : "No students in this group."}
           </p>
         ) : (
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <caption className="sr-only">Session roll</caption>
-              <thead className="text-xs text-muted">
+              <thead className="bg-paper/70 text-xs uppercase tracking-wide text-muted">
                 <tr className="border-y border-line">
                   <th scope="col" className="px-6 py-3 font-medium">Student</th>
                   <th scope="col" className="px-3 py-3 font-medium">Program</th>
@@ -166,12 +170,12 @@ export function CoordinatorScreen() {
                       <td className="px-3 py-3">
                         <StatusBadge status={r.finalStatus} />
                         {r.correction && (
-                          <p className="mt-1 max-w-[14rem] truncate text-xs text-brand-dark" title={r.correction.reason}>
+                          <p className="mt-1 max-w-[14rem] truncate text-xs text-brand-ink" title={r.correction.reason}>
                             Corrected by {r.correction.by}
                           </p>
                         )}
                       </td>
-                      <td className="px-3 py-3 text-ink-soft">{eligible ? "Eligible" : r.timeOut ? "Not eligible" : "Pending check-out"}</td>
+                      <td className="px-3 py-3 text-ink-soft">{eligible ? "Eligible" : r.timeOut ? "Not eligible" : "Pending time-out"}</td>
                       <td className="px-6 py-3 text-right">
                         {r.timeInScanId && (
                           <button type="button" onClick={() => setEditing(r)} className={btn.small}>

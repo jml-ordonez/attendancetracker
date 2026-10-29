@@ -98,6 +98,73 @@ export function encryptPayload(payload: DecryptedQRPayload, keys?: KeyConfig): s
   return Buffer.from(envelopeJson, "utf8").toString("base64url");
 }
 
+/** Prefix of the compact token format. Uppercase so the whole token fits QR alphanumeric mode. */
+const COMPACT_PREFIX = "V2:";
+const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function base32Encode(buf: Buffer): string {
+  let bits = 0;
+  let value = 0;
+  let out = "";
+  for (const byte of buf) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      out += BASE32[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) out += BASE32[(value << (5 - bits)) & 31];
+  return out;
+}
+
+function base32Decode(text: string): Buffer | null {
+  let bits = 0;
+  let value = 0;
+  const out: number[] = [];
+  for (const ch of text) {
+    const idx = BASE32.indexOf(ch);
+    if (idx < 0) return null;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(out);
+}
+
+/**
+ * Same 3DES encryption and HMAC as `encryptPayload`, packed as raw bytes
+ * (iv || ciphertext || mac) in base32: `V2:<KID>:<DATA>`. About half the
+ * length of the JSON envelope, so the printed QR has far fewer modules and
+ * phone cameras read it reliably.
+ */
+export function encryptPayloadCompact(payload: DecryptedQRPayload, keys?: KeyConfig): string {
+  const { desKey, hmacKey, keyId } = keys || getCryptoKeys();
+  const iv = crypto.randomBytes(DES_IV_BYTES);
+  const cipher = crypto.createCipheriv(CIPHER_ALGO, desKey, iv);
+  const ct = Buffer.concat([cipher.update(JSON.stringify(payload), "utf8"), cipher.final()]);
+  const mac = computeMac(2, keyId, iv.toString("hex"), ct.toString("hex"), hmacKey);
+  return `${COMPACT_PREFIX}${keyId.toUpperCase()}:${base32Encode(Buffer.concat([iv, ct, Buffer.from(mac, "hex")]))}`;
+}
+
+/** Unpacks a compact token into the envelope shape `decryptPayload` verifies. */
+function parseCompact(token: string, keyId: string): QREnvelope | null {
+  const [, kid, data] = token.split(":");
+  if (!kid || !data || kid !== keyId.toUpperCase()) return null;
+  const raw = base32Decode(data);
+  if (!raw || raw.length < DES_IV_BYTES + 8 + 32) return null;
+  return {
+    v: 2,
+    kid: keyId,
+    iv: raw.subarray(0, DES_IV_BYTES).toString("hex"),
+    ct: raw.subarray(DES_IV_BYTES, raw.length - 32).toString("hex"),
+    mac: raw.subarray(raw.length - 32).toString("hex"),
+  };
+}
+
 export interface DecryptResult {
   success: boolean;
   payload?: DecryptedQRPayload;
@@ -110,10 +177,16 @@ export interface DecryptResult {
  */
 export function decryptPayload(tokenString: string, keys?: KeyConfig): DecryptResult {
   try {
-    const { desKey, hmacKey } = keys || getCryptoKeys();
+    const { desKey, hmacKey, keyId } = keys || getCryptoKeys();
 
     if (!tokenString || typeof tokenString !== "string") {
       return { success: false, error: "INVALID_FORMAT" };
+    }
+
+    if (tokenString.startsWith(COMPACT_PREFIX)) {
+      const compact = parseCompact(tokenString, keyId);
+      if (!compact) return { success: false, error: "INVALID_FORMAT" };
+      tokenString = Buffer.from(JSON.stringify(compact), "utf8").toString("base64url");
     }
 
     let envelopeJson: string;

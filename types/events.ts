@@ -42,7 +42,8 @@ export interface BAEvent {
   id: string;
   title: string;
   description: string;
-  category: EventCategory;
+  /** Only on older events; new events have no category. */
+  category?: EventCategory;
   venue: string;
   start_time: string;
   end_time: string;
@@ -50,6 +51,7 @@ export interface BAEvent {
   organizer_name?: string;
   status: EventStatus;
   certificate_enabled: boolean;
+  /** 0 when there is no minimum stay (the default for new events). */
   min_attendance_duration_mins: number;
   sessions?: EventSession[];
   expected_attendees?: number;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { encryptPayload, decryptPayload, getCryptoKeys } from "../lib/crypto/3des";
+import { encryptPayload, encryptPayloadCompact, decryptPayload, getCryptoKeys } from "../lib/crypto/3des";
 import { DecryptedQRPayload } from "../types/qr";
 
 describe("3DES (des-ede3-cbc) + HMAC-SHA256 Encrypt-then-MAC Cryptographic Module", () => {
@@ -27,6 +27,23 @@ describe("3DES (des-ede3-cbc) + HMAC-SHA256 Encrypt-then-MAC Cryptographic Modul
     expect(result.payload?.sid).toBe(samplePayload.sid);
     expect(result.payload?.eid).toBe(samplePayload.eid);
     expect(result.payload?.p).toBe("time_in");
+  });
+
+  it("round-trips the compact format and keeps it QR-alphanumeric", () => {
+    const token = encryptPayloadCompact(samplePayload);
+    expect(token).toMatch(/^V2:[A-Z0-9]+:[A-Z2-7]+$/);
+    expect(token.length).toBeLessThan(encryptPayload(samplePayload).length);
+    const result = decryptPayload(token);
+    expect(result.success).toBe(true);
+    expect(result.payload?.tid).toBe(samplePayload.tid);
+  });
+
+  it("rejects a tampered compact token", () => {
+    const token = encryptPayloadCompact(samplePayload);
+    const i = token.length - 10;
+    const tampered = token.slice(0, i) + (token[i] === "A" ? "B" : "A") + token.slice(i + 1);
+    expect(decryptPayload(tampered).success).toBe(false);
+    expect(decryptPayload("V2:K1:not-base32!").success).toBe(false);
   });
 
   it("should generate a fresh random 8-byte IV for every encryption call", () => {

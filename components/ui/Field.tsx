@@ -16,7 +16,7 @@ function Label({ htmlFor, label, required }: { htmlFor: string; label: string; r
     <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-ink">
       {label}
       {required && (
-        <span className="text-brand" aria-hidden="true">
+        <span className="text-brand-ink" aria-hidden="true">
           {" "}
           *
         </span>
@@ -94,7 +94,7 @@ export function SelectField({ label, error, hint, children, ...rest }: SelectFie
         className={cn(input, "appearance-none truncate bg-[length:1rem] pr-9", error && "border-rose")}
         style={{
           backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23586a86'%3E%3Cpath d='M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E\")",
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236b645a'%3E%3Cpath d='M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E\")",
           backgroundRepeat: "no-repeat",
           backgroundPosition: "right 0.75rem center",
         }}

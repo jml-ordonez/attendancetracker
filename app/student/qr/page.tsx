@@ -11,7 +11,7 @@ import { StudentRegisterModal } from "@/components/auth/StudentRegisterModal";
 import { useRegisteredStudent } from "@/lib/auth/session";
 import { graceEnds, OPENS_EARLY_MINS, pickSession, publishedSessions } from "@/lib/attendance/schedule";
 import { formatDay, formatTime } from "@/lib/format";
-import { MAJOR_SHORT } from "@/lib/validation";
+import { MAJOR_SHORT, isKnownSection } from "@/lib/validation";
 import type { BAEvent } from "@/types/events";
 
 export default function StudentQRPage() {
@@ -32,7 +32,7 @@ export default function StudentQRPage() {
   const pick = useMemo(() => sessions.find((s) => s.session.id === chosen) ?? (events ? pickSession(events) : null), [sessions, chosen, events]);
   const active = pick && pick.state !== "ended" ? pick : sessions[0] ?? null;
 
-  if (student === undefined) return <div className="min-h-dvh bg-paper" aria-busy="true" />;
+  if (student === undefined) return <div className="min-h-dvh bg-card" aria-busy="true" />;
 
   if (!student) {
     return (
@@ -57,12 +57,12 @@ export default function StudentQRPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-paper">
+    <div className="min-h-dvh bg-card">
       <header className="border-b border-line bg-card">
         <div className="mx-auto flex h-16 max-w-xl items-center justify-between gap-3 px-4">
-          <Link href="/" className="flex items-center gap-2.5" aria-label="BA Attendance home">
-            <BrandMark className="h-8 w-8" />
-            <span className="font-display text-[15px] font-semibold">BA Attendance</span>
+          <Link href="/" className="flex items-center gap-3 rounded-lg py-1" aria-label="BA Attendance home">
+            <BrandMark className="h-10 w-10" />
+            <span className="font-display text-base font-semibold tracking-tight">BA Attendance</span>
           </Link>
           <button type="button" onClick={() => setEditing(true)} className={btn.ghost}>
             <PencilLine className="h-4 w-4" aria-hidden="true" />
@@ -74,21 +74,37 @@ export default function StudentQRPage() {
       <main className="mx-auto max-w-xl px-4 pb-12 pt-6">
         <h1 className="sr-only">Your attendance pass</h1>
 
-        <article className="animate-rise overflow-hidden rounded-2xl bg-card shadow-[0_1px_2px_rgba(11,27,54,0.05),0_18px_40px_-20px_rgba(14,42,107,0.35)]">
+        <Link href="/" className={`${btn.ghost} -ml-3 mb-3`}>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Back
+        </Link>
+
+        <article className="animate-rise overflow-hidden rounded-2xl bg-card shadow-[0_1px_2px_rgba(28,25,23,0.05),0_18px_40px_-20px_rgba(28,25,23,0.3)]">
           {/* Pass header: who this pass belongs to. */}
-          <div className="bg-brand-deep px-6 py-5 text-white">
-            <p className="text-sm text-white/70">Attendance pass</p>
+          <div className="bg-brand px-6 py-5 text-ink">
+            <p className="text-sm font-medium text-ink/70">Attendance pass</p>
             <p className="mt-1 font-display text-[1.625rem] font-semibold leading-tight">{student.fullName}</p>
-            <p className="figures mt-1 text-[15px] text-white/85">
+            <p className="figures mt-1 text-[15px] text-ink/85">
               {student.studentIdNumber} · {student.section}
             </p>
-            <p className="text-sm text-white/70">
+            <p className="text-sm text-ink/70">
               {MAJOR_SHORT[student.majorCode]} Management · {student.yearLevel}
             </p>
           </div>
 
           <div className="p-5 sm:p-6">
-            {eventsError ? (
+            {!isKnownSection(student.section) ? (
+              <div className="rounded-xl bg-brand-tint p-6 text-center" role="alert">
+                <p className="font-semibold">Update your section to get your pass</p>
+                <p className="mt-1 text-sm text-ink-soft">
+                  “{student.section}” is no longer on the section list. Choose your section again; it takes a few seconds.
+                </p>
+                <button type="button" onClick={() => setEditing(true)} className={`${btn.primary} mt-4`}>
+                  <PencilLine className="h-4 w-4" aria-hidden="true" />
+                  Update details
+                </button>
+              </div>
+            ) : eventsError ? (
               <p className="rounded-lg bg-rose-soft px-4 py-3 text-sm font-medium text-rose" role="alert">
                 Couldn’t load events. Check your connection and reload the page.
               </p>
@@ -125,8 +141,8 @@ export default function StudentQRPage() {
                     </span>
                   </p>
                   {active.state === "upcoming" && (
-                    <p className="mt-3 rounded-lg bg-brand-tint px-3 py-2 text-sm text-brand-dark">
-                      Check-in opens {OPENS_EARLY_MINS} minutes before the start, at{" "}
+                    <p className="mt-3 rounded-lg bg-brand-tint px-3 py-2 text-sm text-brand-ink">
+                      Time-in opens {OPENS_EARLY_MINS} minutes before the start, at{" "}
                       {formatTime(new Date(new Date(active.session.time_in_start).getTime() - OPENS_EARLY_MINS * 60000).toISOString())}.
                     </p>
                   )}
@@ -142,12 +158,12 @@ export default function StudentQRPage() {
 
         <ul className="mt-6 space-y-3 text-sm text-ink-soft">
           <li className="flex gap-3">
-            <Sun className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden="true" />
+            <Sun className="mt-0.5 h-4 w-4 shrink-0 text-brand-ink" aria-hidden="true" />
             Turn your screen brightness up and hold the phone still about a hand’s length from the scanner.
           </li>
           <li className="flex gap-3">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden="true" />
-            Each code works once and only for this event. Screenshots and shared codes are refused at the door.
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand-ink" aria-hidden="true" />
+            Your pass only works for this event and carries your name. Keep it to yourself; staff check it against you at the door.
           </li>
         </ul>
       </main>

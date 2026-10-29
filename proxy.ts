@@ -15,7 +15,9 @@ export function proxy(request: NextRequest) {
   url.search = "";
   url.searchParams.set("auth", "admin");
   url.searchParams.set("next", request.nextUrl.pathname);
-  return NextResponse.redirect(url);
+  const response = NextResponse.redirect(url);
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  return response;
 }
 
 export const config = {

@@ -40,6 +40,18 @@ export function RecordsScreen() {
     [scans, eventId, status, major, action, query]
   );
 
+  // Deleted events keep their records, so they stay filterable under their saved title.
+  const eventOptions = useMemo(() => {
+    const options = events.map((e) => ({ id: e.id, title: e.title }));
+    const known = new Set(options.map((o) => o.id));
+    for (const s of scans) {
+      if (known.has(s.eventId)) continue;
+      known.add(s.eventId);
+      options.push({ id: s.eventId, title: `${s.eventTitle} (deleted)` });
+    }
+    return options;
+  }, [events, scans]);
+
   const hasFilters = q || eventId !== "all" || status !== "all" || major !== "all" || action !== "all";
   const reset = () => {
     setQ("");
@@ -100,22 +112,22 @@ export function RecordsScreen() {
           </div>
           <SelectField label="Event" value={eventId} onChange={(e) => { setEventId(e.target.value); setShown(PAGE); }}>
             <option value="all">All events</option>
-            {events.map((e) => (
+            {eventOptions.map((e) => (
               <option key={e.id} value={e.id}>
                 {e.title}
               </option>
             ))}
           </SelectField>
           <SelectField label="Scan" value={action} onChange={(e) => setAction(e.target.value)}>
-            <option value="all">Check-ins and outs</option>
-            <option value="time_in">Check-ins</option>
-            <option value="time_out">Check-outs</option>
+            <option value="all">Time-ins and outs</option>
+            <option value="time_in">Time-ins</option>
+            <option value="time_out">Time-outs</option>
           </SelectField>
           <SelectField label="Status" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="all">Any status</option>
             <option value="on_time">On time</option>
             <option value="late">Late</option>
-            <option value="checked_out">Checked out</option>
+            <option value="checked_out">Timed out</option>
             <option value="left_early">Left early</option>
           </SelectField>
           <SelectField label="Program" value={major} onChange={(e) => setMajor(e.target.value)}>
@@ -133,7 +145,7 @@ export function RecordsScreen() {
             Showing {Math.min(shown, filtered.length)} of {plural(filtered.length, "record")}
           </span>
           {hasFilters && (
-            <button type="button" onClick={reset} className="font-semibold text-brand hover:underline">
+            <button type="button" onClick={reset} className="font-semibold text-brand-ink hover:underline">
               Clear filters
             </button>
           )}
@@ -161,7 +173,7 @@ export function RecordsScreen() {
                     <StatusBadge status={r.status} />
                   </div>
                   <p className="figures mt-1.5 text-sm text-ink-soft">
-                    {r.action === "time_in" ? "Check-in" : "Check-out"} · {formatDateTime(r.timestamp)}
+                    {r.action === "time_in" ? "Time-in" : "Time-out"} · {formatDateTime(r.timestamp)}
                   </p>
                   <p className="truncate text-xs text-muted">{r.eventTitle}</p>
                 </li>
@@ -171,7 +183,7 @@ export function RecordsScreen() {
             <div className="hidden overflow-x-auto border-t border-line md:block">
               <table className="w-full text-left text-sm">
                 <caption className="sr-only">Attendance scans</caption>
-                <thead className="text-xs text-muted">
+                <thead className="bg-paper/70 text-xs uppercase tracking-wide text-muted">
                   <tr className="border-b border-line">
                     <th scope="col" className="px-6 py-3 font-medium">Student</th>
                     <th scope="col" className="px-3 py-3 font-medium">Program</th>
@@ -197,11 +209,11 @@ export function RecordsScreen() {
                         <div className="truncate">{r.eventTitle}</div>
                         <div className="truncate text-xs text-muted">{r.sessionTitle}</div>
                       </td>
-                      <td className="px-3 py-3">{r.action === "time_in" ? "Check-in" : "Check-out"}</td>
+                      <td className="px-3 py-3">{r.action === "time_in" ? "Time-in" : "Time-out"}</td>
                       <td className="px-3 py-3">
                         <div className="flex flex-col items-start gap-1">
                           <StatusBadge status={r.status} />
-                          {r.correction && <span className="text-xs text-brand-dark">Corrected: {r.correction.status.replace("_", " ")}</span>}
+                          {r.correction && <span className="text-xs text-brand-ink">Corrected: {r.correction.status.replace("_", " ")}</span>}
                         </div>
                       </td>
                       <td className="figures whitespace-nowrap px-3 py-3 text-right text-ink-soft">{formatDateTime(r.timestamp)}</td>

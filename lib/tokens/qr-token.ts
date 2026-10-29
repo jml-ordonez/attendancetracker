@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { encryptPayload, decryptPayload } from "@/lib/crypto/3des";
+import { encryptPayloadCompact, decryptPayload } from "@/lib/crypto/3des";
 import { DecryptedQRPayload, TokenPurpose } from "@/types/qr";
 
 export interface CreateTokenParams {
@@ -33,7 +33,7 @@ export interface ValidationCheckResult {
 const DEFAULT_EXPIRY_SECONDS = 45;
 
 /**
- * Generates an encrypted dynamic single-use QR token with CSPRNG nonce.
+ * Generates an encrypted QR token with CSPRNG nonce, in the compact format.
  */
 export function generateStudentQRToken(params: CreateTokenParams): GeneratedTokenResult {
   const tokenId = crypto.randomUUID();
@@ -58,7 +58,7 @@ export function generateStudentQRToken(params: CreateTokenParams): GeneratedToke
     nonce: nonce,
   };
 
-  const token = encryptPayload(payload);
+  const token = encryptPayloadCompact(payload);
 
   return {
     token,

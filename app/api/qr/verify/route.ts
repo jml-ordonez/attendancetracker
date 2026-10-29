@@ -11,12 +11,13 @@ const schema = z.object({
   token: z.string().min(1).max(4000),
   eventId: z.string().min(1),
   sessionId: z.string().min(1),
-  expectedPurpose: purposeSchema,
+  /** Optional: the scanner now leaves it out and the pass decides time-in or time-out. */
+  expectedPurpose: purposeSchema.optional(),
 });
 
 const REJECTIONS = {
   INVALID_TOKEN: ["TOKEN_TAMPERED", "This is not a valid attendance pass."],
-  TOKEN_EXPIRED: ["TOKEN_EXPIRED", "This code has expired. Ask the student to show the new code on their screen."],
+  TOKEN_EXPIRED: ["TOKEN_EXPIRED", "This pass has expired. Ask the student to reopen their pass to get a new code."],
   PURPOSE_MISMATCH: ["TOKEN_INVALID", "Wrong pass type for this scanner. Ask the student to switch their pass to match."],
   EVENT_MISMATCH: ["TOKEN_INVALID", "This pass is for a different event."],
   SESSION_MISMATCH: ["TOKEN_INVALID", "This pass is for a different session of this event."],
@@ -31,8 +32,8 @@ export async function POST(request: NextRequest) {
   const { token, eventId, sessionId, expectedPurpose } = parsed.data;
   const ip = clientIp(request);
 
-  // Decrypt, check the HMAC, expiry, purpose, event and session in one place.
-  const check = validateTokenIntegrity(token, expectedPurpose, eventId, sessionId);
+  // Decrypt, check the HMAC, expiry, event and session in one place.
+  const check = validateTokenIntegrity(token, undefined, eventId, sessionId);
   const p = check.payload;
 
   let result: ScanVerificationResult;
@@ -57,10 +58,11 @@ export async function POST(request: NextRequest) {
       student: { name: p.sname, idNumber: p.snum, majorCode: p.smaj, section: p.ssec },
       eventId,
       sessionId,
-      purpose: p.p,
+      // One pass serves time-in and time-out, so it is not single-use; the
+      // duplicate checks in recordAttendance stop a second time-in or time-out.
+      purpose: p.p === "attendance" ? "attendance" : (expectedPurpose ?? p.p),
       officer: admin.name,
       method: "qr",
-      token: { id: p.tid, expiresAt: p.exp },
     });
   }
 
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest) {
     category: "attendance",
     action: result.success ? "scan.verified" : "scan.rejected",
     summary: result.success
-      ? `${expectedPurpose === "time_in" ? "Checked in" : "Checked out"} ${who}`
+      ? `${result.details?.action === "time_out" ? "Timed out" : "Timed in"} ${who}`
       : `Rejected scan of ${who}: ${result.message}`,
     target: result.details?.eventTitle,
     outcome: result.success ? "success" : "failure",

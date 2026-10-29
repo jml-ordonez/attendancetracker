@@ -9,18 +9,23 @@ import {
   STUDENT_ID_PATTERN,
   UA_EMAIL_PATTERN,
   deriveMajorFromSection,
+  eventInputSchema,
   sectionMatchesMajor,
   sectionMatchesYear,
   sectionSchema,
+  sectionsForYear,
   studentIdSchema,
+  studentRegistrationSchema,
+  yearLevelForSection,
 } from "../lib/validation";
+import { addEvent, deleteEvent, getEvent } from "../lib/events/store";
 
 // Seeded "Morning keynote": check-in 08:00–09:00 (UTC+8), 15 min grace, check-out 12:00–13:00.
 const EVENT = "a2b4c6d8-1111-2222-3333-444455556666";
 const SESSION = "b3c5d7e9-2222-3333-4444-555566667777";
 const at = (hhmm: string) => new Date(`2026-10-24T${hhmm}:00+08:00`);
 const student = { name: "Maria Santos", idNumber: "2024-01492-BA", majorCode: "BSBA-FM", section: "BA-FM 2-1" };
-const scan = (purpose: "time_in" | "time_out", time: string, extra: Partial<Parameters<typeof recordAttendance>[0]> = {}) =>
+const scan = (purpose: "time_in" | "time_out" | "attendance", time: string, extra: Partial<Parameters<typeof recordAttendance>[0]> = {}) =>
   recordAttendance({ student, eventId: EVENT, sessionId: SESSION, purpose, officer: "Test", method: "qr", now: at(time), ...extra });
 
 describe("Attendance pipeline", () => {
@@ -65,6 +70,24 @@ describe("Attendance pipeline", () => {
     expect(scan("time_in", "08:05", { token }).success).toBe(true);
     expect(scan("time_out", "12:30", { token }).status).toBe("DUPLICATE_TOKEN_USE");
     expect(scan("time_out", "12:31", { token: { ...token, id: "tok-2" } }).success).toBe(true);
+  });
+
+  it("uses one pass for check-in, then check-out, then refuses", () => {
+    const first = scan("attendance", "08:05");
+    expect(first.status).toBe("SUCCESS_ON_TIME");
+    expect(first.details?.action).toBe("time_in");
+
+    // A repeat at the door moments later is not a check-out.
+    expect(scan("attendance", "08:07").status).toBe("DUPLICATE_SCAN");
+
+    const second = scan("attendance", "12:30");
+    expect(second.status).toBe("SUCCESS_CHECKOUT");
+    expect(second.details?.action).toBe("time_out");
+
+    const third = scan("attendance", "12:40");
+    expect(third.success).toBe(false);
+    expect(third.message).toMatch(/already completed attendance/);
+    expect(listScans()).toHaveLength(2);
   });
 
   it("pairs check-in and check-out into one roll entry", () => {
@@ -144,10 +167,38 @@ describe("Student registration validation", () => {
     expect(studentIdSchema.safeParse("2024-01492-BA").success).toBe(true);
   });
 
-  it("validates MM-1A section format schema", () => {
+  it("accepts only the listed sections", () => {
     expect(SECTION_PATTERN.test("MM-1A")).toBe(true);
-    expect(sectionSchema.safeParse("MM-1A").success).toBe(true);
-    expect(sectionSchema.safeParse("FM-2B").success).toBe(true);
+    for (const s of ["MM-1A", "MM-1B", "MM-2A", "MM-2B", "MM-3A", "MM-3B", "MM-4A", "MM-4B"]) {
+      expect(sectionSchema.safeParse(s).success).toBe(true);
+    }
+    expect(sectionSchema.safeParse(" mm-2b ").data).toBe("MM-2B");
+    for (const s of ["MM-1C", "MM-5A", "FM-2B", "BA-MM 3-1", ""]) {
+      expect(sectionSchema.safeParse(s).success).toBe(false);
+    }
+  });
+
+  it("lists each year's sections", () => {
+    expect(sectionsForYear("1st Year")).toEqual(["MM-1A", "MM-1B"]);
+    expect(sectionsForYear("4th Year")).toEqual(["MM-4A", "MM-4B"]);
+    expect(sectionsForYear("5th Year")).toEqual([]);
+    expect(deriveMajorFromSection("MM-3B")).toBe("BSBA-MM");
+  });
+
+  it("derives the year level from every section", () => {
+    expect(yearLevelForSection("MM-1A")).toBe("1st Year");
+    expect(yearLevelForSection("MM-2B")).toBe("2nd Year");
+    expect(yearLevelForSection("MM-3A")).toBe("3rd Year");
+    expect(yearLevelForSection("MM-4B")).toBe("4th Year");
+  });
+
+  it("checks the whole registration form", () => {
+    const ok = { firstName: "Juan", lastName: "Dela Cruz", studentIdNumber: "2021003213", email: "juan@ua.edu.ph", section: "MM-3B" };
+    expect(studentRegistrationSchema.safeParse(ok).success).toBe(true);
+    const bad = studentRegistrationSchema.safeParse({ ...ok, firstName: "J4n", email: "juan@gmail.com", section: "" });
+    expect(bad.success).toBe(false);
+    const paths = bad.error!.issues.map((i) => i.path[0]);
+    expect(paths).toEqual(expect.arrayContaining(["firstName", "email", "section"]));
   });
 
   it("validates university email ending with @ua.edu.ph", () => {
@@ -155,5 +206,45 @@ describe("Student registration validation", () => {
     expect(UA_EMAIL_PATTERN.test("2021003213@ua.edu.ph")).toBe(true);
     expect(UA_EMAIL_PATTERN.test("student@university.edu")).toBe(false);
     expect(UA_EMAIL_PATTERN.test("student@gmail.com")).toBe(false);
+  });
+});
+
+describe("Deleting an event", () => {
+  beforeEach(() => clearScans());
+
+  it("removes the event but keeps its attendance records", () => {
+    scan("time_in", "08:05");
+    const event = getEvent(EVENT)!;
+    expect(deleteEvent(EVENT)?.id).toBe(EVENT);
+    expect(getEvent(EVENT)).toBeUndefined();
+    expect(listScans()).toHaveLength(1);
+    expect(listScans()[0].eventTitle).toBe(event.title);
+    // Scanning a pass for a deleted event is refused, not recorded.
+    expect(scan("time_out", "12:30").status).toBe("SESSION_NOT_FOUND");
+    expect(deleteEvent(EVENT)).toBeNull();
+    addEvent(event); // restore the seed for later tests
+  });
+});
+
+describe("New event validation", () => {
+  const inHours = (h: number) => new Date(Date.now() + h * 3600000).toISOString();
+  const base = { title: "Marketing Week Opening", description: "Opening program for all year levels.", venue: "AVR 2", start: inHours(1), end: inHours(4), gracePeriodMins: 15, publish: true };
+
+  it("accepts a valid event and tidies whitespace", () => {
+    const r = eventInputSchema.safeParse({ ...base, title: "  Marketing   Week Opening " });
+    expect(r.success).toBe(true);
+    expect(r.data!.title).toBe("Marketing Week Opening");
+  });
+
+  it("rejects bad fields with the right path", () => {
+    const issue = (v: object) => eventInputSchema.safeParse({ ...base, ...v }).error?.issues[0]?.path[0];
+    expect(issue({ title: "-----" })).toBe("title");
+    expect(issue({ venue: " " })).toBe("venue");
+    expect(issue({ end: inHours(0.5) })).toBe("end");
+    expect(issue({ end: inHours(30) })).toBe("end");
+    expect(issue({ start: inHours(-5), end: inHours(-2) })).toBe("end");
+    expect(issue({ gracePeriodMins: Number.NaN })).toBe("gracePeriodMins");
+    expect(issue({ gracePeriodMins: 200 })).toBe("gracePeriodMins");
+    expect(issue({ gracePeriodMins: 7.5 })).toBe("gracePeriodMins");
   });
 });
