@@ -109,6 +109,16 @@ export function registerStudent(
   return student;
 }
 
+/** Switches the registered student to another event, keeping the rest of their details. */
+export function setStudentEvent(eventId: string): RegisteredStudentSession | null {
+  const existing = getRegisteredStudent();
+  if (!existing) return null;
+  const student: RegisteredStudentSession = { ...existing, eventId };
+  localStorage.setItem(STUDENT_STORAGE_KEY, JSON.stringify(student));
+  emit();
+  return student;
+}
+
 export function clearStudentRegistration(): void {
   if (!isBrowser()) return;
   try {

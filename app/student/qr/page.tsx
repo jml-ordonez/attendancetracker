@@ -2,23 +2,26 @@
 
 import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CalendarDays, MapPin, PencilLine, RefreshCw, ShieldCheck, Sun } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, MapPin, PencilLine, RefreshCw, ShieldCheck, Sun } from "lucide-react";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { SelectField } from "@/components/ui/Field";
 import { btn } from "@/components/ui/styles";
 import { DynamicQRDisplay } from "@/components/student/DynamicQRDisplay";
 import { StudentRegisterModal } from "@/components/auth/StudentRegisterModal";
-import { useRegisteredStudent } from "@/lib/auth/session";
-import { graceEnds, liveSessionsOf, OPENS_EARLY_MINS } from "@/lib/attendance/schedule";
+import { setStudentEvent, useRegisteredStudent } from "@/lib/auth/session";
+import { graceEnds, liveSessionsOf, OPENS_EARLY_MINS, registrableEvents, sessionState } from "@/lib/attendance/schedule";
 import { useEvents } from "@/lib/client/events";
 import { formatDay, formatTime } from "@/lib/format";
 import { MAJOR_SHORT, isKnownSection } from "@/lib/validation";
+import type { BAEvent } from "@/types/events";
 
 export default function StudentQRPage() {
   const student = useRegisteredStudent();
   const [editing, setEditing] = useState(false);
   const { events, error: eventsError, reload } = useEvents();
   const [chosen, setChosen] = useState<string | null>(null);
+  /** Showing the event picker in place of the pass ("Change event"). */
+  const [picking, setPicking] = useState(false);
 
   // Only the sessions of the event the student registered for.
   const registeredEventId = student?.eventId;
@@ -109,20 +112,18 @@ export default function StudentQRPage() {
               </div>
             ) : !events ? (
               <div className="h-80 animate-pulse rounded-xl bg-paper" />
-            ) : !active ? (
-              <div className="rounded-xl bg-paper p-6 text-center">
-                <CalendarDays className="mx-auto h-7 w-7 text-muted" aria-hidden="true" />
-                <p className="mt-3 font-semibold">{student.eventId ? "Your event is no longer open" : "Choose your event"}</p>
-                <p className="mt-1 text-sm text-ink-soft">
-                  {student.eventId
-                    ? "The event you registered for has ended or was removed. Choose another event to get a new pass."
-                    : "Pick the event you’re attending to get your pass for it."}
-                </p>
-                <button type="button" onClick={() => setEditing(true)} className={`${btn.primary} mt-4`}>
-                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
-                  Choose event
-                </button>
-              </div>
+            ) : !active || picking ? (
+              <EventPicker
+                events={events}
+                reason={picking ? "change" : student.eventId ? "gone" : "none"}
+                currentId={active?.event.id}
+                onPick={(id) => {
+                  setStudentEvent(id);
+                  setChosen(null);
+                  setPicking(false);
+                }}
+                onCancel={picking ? () => setPicking(false) : undefined}
+              />
             ) : (
               <>
                 {sessions.length > 1 ? (
@@ -138,7 +139,7 @@ export default function StudentQRPage() {
                 <div className={sessions.length > 1 ? "mt-4" : ""}>
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-display text-lg font-semibold leading-snug">{active.event.title}</p>
-                    <button type="button" onClick={() => setEditing(true)} className="press shrink-0 rounded-md px-2 py-1 text-sm font-semibold text-brand-ink hover:bg-brand-tint">
+                    <button type="button" onClick={() => setPicking(true)} className="press shrink-0 rounded-md px-2 py-1 text-sm font-semibold text-brand-ink hover:bg-brand-tint">
                       Change event
                     </button>
                   </div>
@@ -182,5 +183,88 @@ export default function StudentQRPage() {
 
       <StudentRegisterModal isOpen={editing} onClose={() => setEditing(false)} goToPass={false} />
     </div>
+  );
+}
+
+/**
+ * Lets a registered student choose (or switch) the event for their pass on
+ * the pass page itself, instead of re-entering all their details.
+ */
+function EventPicker({
+  events,
+  reason,
+  currentId,
+  onPick,
+  onCancel,
+}: {
+  events: BAEvent[];
+  reason: "none" | "gone" | "change";
+  currentId?: string;
+  onPick: (eventId: string) => void;
+  onCancel?: () => void;
+}) {
+  const options = useMemo(() => registrableEvents(events), [events]);
+  // Default to the event taking attendance right now, else the next one.
+  const suggested =
+    options.find((e) => e.id !== currentId && e.sessions?.some((s) => sessionState(s) === "open"))?.id ?? options.find((e) => e.id !== currentId)?.id ?? options[0]?.id ?? "";
+  const [picked, setPicked] = useState("");
+  const value = options.some((e) => e.id === picked) ? picked : suggested;
+
+  const heading = reason === "change" ? "Change event" : reason === "gone" ? "Your event is no longer open" : "Choose your event";
+  const text =
+    reason === "gone"
+      ? "The event you registered for has ended or was removed. Choose the event you’re attending now."
+      : "Your pass is made for the event you choose.";
+
+  if (options.length === 0) {
+    return (
+      <div className="rounded-xl bg-paper p-6 text-center" role="status">
+        <CalendarDays className="mx-auto h-7 w-7 text-muted" aria-hidden="true" />
+        <p className="mt-3 font-semibold">No events are taking attendance</p>
+        <p className="mt-1 text-sm text-ink-soft">This page checks again every minute. When the department publishes an event, you can choose it here.</p>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className={`${btn.secondary} mt-4`}>
+            Back to my pass
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="rounded-xl bg-paper p-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (value) onPick(value);
+      }}
+    >
+      <p className="font-semibold">{heading}</p>
+      <p className="mt-1 text-sm text-ink-soft">{text}</p>
+      <div className="mt-4">
+        <SelectField label="Event" required value={value} onChange={(e) => setPicked(e.target.value)}>
+          {options.map((ev) => {
+            const openNow = ev.sessions?.some((s) => sessionState(s) === "open");
+            return (
+              <option key={ev.id} value={ev.id}>
+                {ev.title} · {formatDay(ev.start_time)}
+                {openNow ? " · open now" : ""}
+              </option>
+            );
+          })}
+        </SelectField>
+      </div>
+      <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        {onCancel && (
+          <button type="button" onClick={onCancel} className={btn.secondary}>
+            Cancel
+          </button>
+        )}
+        <button type="submit" disabled={!value} className={btn.primary}>
+          Get my pass
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    </form>
   );
 }

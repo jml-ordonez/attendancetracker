@@ -225,7 +225,8 @@ function sessionRows(eventId: string, sessions: EventSession[]) {
 
 /** Turns a Supabase error into one a person can act on; the details go to the server log. */
 function dbError(action: string, error: { code?: string; message: string }): EventStoreError {
-  console.error(`[events] couldn't ${action}`, error);
+  // Spelled out: Supabase error objects print as {} in the Next.js log.
+  console.error(`[events] couldn't ${action}: ${error.code ?? "?"} ${error.message}`);
   // PGRST204: a column the app writes doesn't exist. 23502: a NOT NULL column the app leaves empty.
   if (error.code === "PGRST204" || error.code === "23502") {
     return new EventStoreError(
