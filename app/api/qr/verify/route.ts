@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { validateTokenIntegrity } from "@/lib/tokens/qr-token";
 import { recordAttendance } from "@/lib/attendance/record";
+import { findSession } from "@/lib/events/store";
 import { logAudit } from "@/lib/audit/store";
 import { clientIp, parseBody, requireAdmin } from "@/lib/http";
 import { purposeSchema } from "@/lib/validation";
@@ -54,10 +55,12 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
     };
   } else {
+    const found = await findSession(eventId, sessionId);
     result = recordAttendance({
       student: { name: p.sname, idNumber: p.snum, majorCode: p.smaj, section: p.ssec },
       eventId,
       sessionId,
+      found,
       // One pass serves time-in and time-out, so it is not single-use; the
       // duplicate checks in recordAttendance stop a second time-in or time-out.
       purpose: p.p === "attendance" ? "attendance" : (expectedPurpose ?? p.p),

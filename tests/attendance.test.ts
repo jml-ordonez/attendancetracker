@@ -10,6 +10,7 @@ import {
   UA_EMAIL_PATTERN,
   deriveMajorFromSection,
   eventInputSchema,
+  eventUpdateSchema,
   sectionMatchesMajor,
   sectionMatchesYear,
   sectionSchema,
@@ -18,7 +19,8 @@ import {
   studentRegistrationSchema,
   yearLevelForSection,
 } from "../lib/validation";
-import { addEvent, deleteEvent, getEvent, listEvents } from "../lib/events/store";
+import { addEvent, deleteEvent, findSession, getEvent, listEvents, updateEvent, type SessionMatch } from "../lib/events/store";
+import { duplicateTitle, singleSession } from "../lib/events/windows";
 import { liveSessionsOf, registrableEvents } from "../lib/attendance/schedule";
 
 // Seeded "Morning keynote": check-in 08:00–09:00 (UTC+8), 15 min grace, check-out 12:00–13:00.
@@ -26,8 +28,13 @@ const EVENT = "a2b4c6d8-1111-2222-3333-444455556666";
 const SESSION = "b3c5d7e9-2222-3333-4444-555566667777";
 const at = (hhmm: string) => new Date(`2026-10-24T${hhmm}:00+08:00`);
 const student = { name: "Maria Santos", idNumber: "2024-01492-BA", majorCode: "BSBA-FM", section: "BA-FM 2-1" };
+/** The seeded session, looked up the way the API routes do before recording. */
+let found: SessionMatch | null = null;
+beforeEach(async () => {
+  found = await findSession(EVENT, SESSION);
+});
 const scan = (purpose: "time_in" | "time_out" | "attendance", time: string, extra: Partial<Parameters<typeof recordAttendance>[0]> = {}) =>
-  recordAttendance({ student, eventId: EVENT, sessionId: SESSION, purpose, officer: "Test", method: "qr", now: at(time), ...extra });
+  recordAttendance({ student, eventId: EVENT, sessionId: SESSION, found, purpose, officer: "Test", method: "qr", now: at(time), ...extra });
 
 describe("Attendance pipeline", () => {
   beforeEach(() => clearScans());
@@ -213,17 +220,18 @@ describe("Student registration validation", () => {
 describe("Deleting an event", () => {
   beforeEach(() => clearScans());
 
-  it("removes the event but keeps its attendance records", () => {
+  it("removes the event but keeps its attendance records", async () => {
     scan("time_in", "08:05");
-    const event = getEvent(EVENT)!;
-    expect(deleteEvent(EVENT)?.id).toBe(EVENT);
-    expect(getEvent(EVENT)).toBeUndefined();
+    const event = (await getEvent(EVENT))!;
+    expect((await deleteEvent(EVENT))?.id).toBe(EVENT);
+    expect(await getEvent(EVENT)).toBeUndefined();
+    expect(await listEvents()).not.toContainEqual(expect.objectContaining({ id: EVENT }));
     expect(listScans()).toHaveLength(1);
     expect(listScans()[0].eventTitle).toBe(event.title);
     // Scanning a pass for a deleted event is refused, not recorded.
-    expect(scan("time_out", "12:30").status).toBe("SESSION_NOT_FOUND");
-    expect(deleteEvent(EVENT)).toBeNull();
-    addEvent(event); // restore the seed for later tests
+    expect(scan("time_out", "12:30", { found: await findSession(EVENT, SESSION) }).status).toBe("SESSION_NOT_FOUND");
+    expect(await deleteEvent(EVENT)).toBeNull();
+    await addEvent(event); // restore the seed for later tests
   });
 });
 
@@ -247,21 +255,61 @@ describe("New event validation", () => {
     expect(issue({ gracePeriodMins: Number.NaN })).toBe("gracePeriodMins");
     expect(issue({ gracePeriodMins: 200 })).toBe("gracePeriodMins");
     expect(issue({ gracePeriodMins: 7.5 })).toBe("gracePeriodMins");
+    expect(issue({ end: new Date(new Date(base.start).getTime() + 10 * 60000).toISOString() })).toBe("end");
+  });
+
+  it("lets an edit keep a past schedule but still checks it", () => {
+    const past = { ...base, start: inHours(-5), end: inHours(-2) };
+    expect(eventUpdateSchema.safeParse(past).success).toBe(true);
+    expect(eventUpdateSchema.safeParse({ ...past, end: inHours(-6) }).success).toBe(false);
   });
 });
 
 describe("Events a student can register for", () => {
-  it("lists only published events with a session still to come", () => {
+  it("lists only published events with a session still to come", async () => {
+    const all = await listEvents();
     // Seed: Summit (Oct 24, published), Convention (Nov 5, published), Workshop (Nov 12, draft).
-    const ids = (at: string) => registrableEvents(listEvents(), new Date(at)).map((e) => e.title);
+    const ids = (at: string) => registrableEvents(all, new Date(at)).map((e) => e.title);
     expect(ids("2026-10-20T00:00:00+08:00")).toEqual(["Annual BA Leadership Summit 2026", "Financial Analytics & FinTech Convention"]);
     expect(ids("2026-10-25T00:00:00+08:00")).toEqual(["Financial Analytics & FinTech Convention"]);
     expect(ids("2026-12-01T00:00:00+08:00")).toEqual([]);
   });
 
-  it("returns the remaining sessions of the chosen event", () => {
-    const summit = "a2b4c6d8-1111-2222-3333-444455556666";
-    expect(liveSessionsOf(listEvents(), summit, new Date("2026-10-24T07:30:00+08:00"))).toHaveLength(2);
-    expect(liveSessionsOf(listEvents(), summit, new Date("2026-10-24T14:00:00+08:00"))).toHaveLength(1);
+  it("returns the remaining sessions of the chosen event", async () => {
+    const all = await listEvents();
+    expect(liveSessionsOf(all, EVENT, new Date("2026-10-24T07:30:00+08:00"))).toHaveLength(2);
+    expect(liveSessionsOf(all, EVENT, new Date("2026-10-24T14:00:00+08:00"))).toHaveLength(1);
+  });
+});
+
+describe("Editing an event", () => {
+  it("rebuilds the session windows but keeps the session id, so issued passes stay valid", () => {
+    const start = new Date("2026-11-20T09:00:00+08:00");
+    const end = new Date("2026-11-20T10:00:00+08:00");
+    const s = singleSession("evt", start, end, 10, { id: "keep-me", title: "Main session" });
+    expect(s.id).toBe("keep-me");
+    expect(s.session_date).toBe("2026-11-20");
+    // A one-hour event gets 30-minute windows that don't overlap.
+    expect(s.time_in_end).toBe(new Date("2026-11-20T09:30:00+08:00").toISOString());
+    expect(s.time_out_start).toBe(new Date("2026-11-20T09:30:00+08:00").toISOString());
+    expect(s.grace_period_mins).toBe(10);
+  });
+
+  it("finds duplicate titles on the same day, ignoring the event being edited", async () => {
+    const all = await listEvents();
+    const day = new Date("2026-10-24T15:00:00+08:00");
+    expect(duplicateTitle(all, "annual ba leadership summit 2026", day)).toBe(true);
+    expect(duplicateTitle(all, "Annual BA Leadership Summit 2026", day, EVENT)).toBe(false);
+    expect(duplicateTitle(all, "Annual BA Leadership Summit 2026", new Date("2026-10-25T09:00:00+08:00"))).toBe(false);
+  });
+
+  it("saves changes and bumps updated_at", async () => {
+    const before = (await getEvent(EVENT))!;
+    const original = { title: before.title, updated_at: before.updated_at };
+    const after = (await updateEvent(EVENT, { title: "Leadership Summit (moved to Hall B)" }))!;
+    expect(after.title).toBe("Leadership Summit (moved to Hall B)");
+    expect(after.updated_at).not.toBe(original.updated_at);
+    expect(await updateEvent("00000000-0000-0000-0000-000000000000", { title: "Nope" })).toBeNull();
+    await updateEvent(EVENT, { title: original.title });
   });
 });

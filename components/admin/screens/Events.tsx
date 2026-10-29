@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, CalendarPlus, CheckCircle2, Loader2, MapPin, Trash2 } from "lucide-react";
+import { AlertTriangle, CalendarPlus, CheckCircle2, Info, Loader2, MapPin, Pencil, Trash2 } from "lucide-react";
 import { useAdminData } from "@/components/admin/AdminData";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Modal } from "@/components/ui/Modal";
@@ -12,14 +12,15 @@ import { api, ApiError } from "@/lib/client/api";
 import { sessionState } from "@/lib/attendance/schedule";
 import { formatDay, formatTime, plural } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { eventInputSchema, fieldErrors } from "@/lib/validation";
+import { ENDED_MESSAGE, eventInputSchema, eventUpdateSchema, fieldErrors } from "@/lib/validation";
 import type { BAEvent } from "@/types/events";
 
 type Filter = "upcoming" | "past" | "draft" | "all";
 
 export function EventsScreen() {
-  const { events, scans, loaded, updatedAt, refreshEvents } = useAdminData();
+  const { events, scans, loaded, updatedAt, refreshEvents, putEvent, dropEvent } = useAdminData();
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<BAEvent | null>(null);
   const [filter, setFilter] = useState<Filter>("upcoming");
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,14 +51,27 @@ export function EventsScreen() {
     setError(null);
     setNotice(null);
     try {
-      await api(`/api/events/${event.id}`, { method: "PATCH", json: { status } });
-      await refreshEvents();
+      const res = await api<{ event: BAEvent }>(`/api/events/${event.id}`, { method: "PATCH", json: { status } });
+      putEvent(res.event);
+      setNotice(
+        status === "published"
+          ? `Published “${event.title}”. Students can get passes for it now.`
+          : status === "draft"
+            ? `Unpublished “${event.title}”. It's in Drafts and hidden from students.`
+            : `Cancelled “${event.title}”. It's in Drafts; publish it again to restore it.`
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't update the event.");
+      // The event may have been deleted or changed elsewhere: show the current list.
+      if (e instanceof ApiError && (e.status === 404 || e.status === 409)) void refreshEvents();
     } finally {
       setPending(null);
     }
   };
+
+  /** The tab a saved event shows up in, so it never seems to disappear after saving. */
+  const tabFor = (e: BAEvent): Filter =>
+    e.status !== "published" ? "draft" : new Date(e.end_time).getTime() < Date.now() ? "past" : "upcoming";
 
   return (
     <>
@@ -112,14 +126,30 @@ export function EventsScreen() {
       {!loaded ? (
         <div className="h-64 animate-pulse rounded-xl bg-card" />
       ) : visible.length === 0 ? (
-        <p className={cn(card, "p-8 text-center text-sm text-ink-soft")}>
-          {filter === "upcoming" ? "No upcoming published events. Create one, or publish a draft." : "Nothing here."}
-        </p>
+        <div className={cn(card, "p-8 text-center")}>
+          <p className="text-sm text-ink-soft">
+            {filter === "upcoming"
+              ? "No upcoming published events. Create one, or publish a draft."
+              : filter === "past"
+                ? "No past events yet."
+                : filter === "draft"
+                  ? "No drafts or cancelled events."
+                  : "No events yet."}
+          </p>
+          {(filter === "upcoming" || filter === "all") && (
+            <button type="button" onClick={() => setCreating(true)} className={cn(btn.primary, "mt-4")}>
+              <CalendarPlus className="h-4 w-4" aria-hidden="true" />
+              New event
+            </button>
+          )}
+        </div>
       ) : (
         <ul className="space-y-4">
           {visible.map((e, i) => {
             const session = e.sessions?.[0];
             const open = e.status === "published" && e.sessions?.some((s) => sessionState(s) === "open");
+            const ended = new Date(e.end_time).getTime() < now;
+            const busy = pending === e.id;
             return (
               <li key={e.id} className={cn(card, "animate-rise grid gap-5 p-5 sm:p-6 md:grid-cols-[7rem_minmax(0,1fr)_auto]")} style={{ "--i": i + 2 } as React.CSSProperties}>
                 <div className="figures">
@@ -152,29 +182,47 @@ export function EventsScreen() {
                     <span className="font-medium text-ink-soft">{plural(counts.get(e.id) ?? 0, "time-in")}</span>
                   </p>
                 </div>
-                <div className="flex flex-wrap items-start gap-2 md:flex-col md:items-stretch">
+                <div className="flex flex-wrap items-start gap-2 md:flex-col md:items-stretch" aria-busy={busy}>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setError(null);
+                      setNotice(null);
+                      setEditing(e);
+                    }}
+                    aria-label={`Edit ${e.title}`}
+                    className={btn.small}
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                    Edit
+                  </button>
                   {e.status === "published" ? (
-                    <button type="button" disabled={pending === e.id} onClick={() => setStatus(e, "draft")} className={btn.small}>
+                    <button type="button" disabled={busy} onClick={() => setStatus(e, "draft")} className={btn.small}>
+                      {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                       Unpublish
                     </button>
+                  ) : ended ? (
+                    <span className="px-1 py-1.5 text-sm text-muted">Ended · edit the date to publish</span>
                   ) : (
                     <button
                       type="button"
-                      disabled={pending === e.id}
+                      disabled={busy}
                       onClick={() => setStatus(e, "published")}
                       className={cn(btn.small, "border-brand bg-brand text-ink hover:border-brand-dark hover:bg-brand-dark hover:text-ink")}
                     >
+                      {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                       {e.status === "cancelled" ? "Restore & publish" : "Publish"}
                     </button>
                   )}
                   {e.status !== "cancelled" && (
-                    <button type="button" disabled={pending === e.id} onClick={() => setStatus(e, "cancelled")} className={cn(btn.small, "text-rose hover:border-rose hover:text-rose")}>
+                    <button type="button" disabled={busy} onClick={() => setStatus(e, "cancelled")} className={cn(btn.small, "text-rose hover:border-rose hover:text-rose")}>
                       Cancel event
                     </button>
                   )}
                   <button
                     type="button"
-                    disabled={pending === e.id}
+                    disabled={busy}
                     onClick={() => {
                       setError(null);
                       setNotice(null);
@@ -197,20 +245,39 @@ export function EventsScreen() {
         event={deleting}
         timeIns={deleting ? counts.get(deleting.id) ?? 0 : 0}
         onClose={() => setDeleting(null)}
-        onDeleted={async (title, kept) => {
+        onDeleted={(id, title, kept) => {
           setDeleting(null);
+          dropEvent(id);
           setNotice(`Deleted “${title}”.${kept ? ` Its ${plural(kept, "attendance record")} stay in Attendance records.` : ""}`);
-          await refreshEvents();
+          void refreshEvents();
+        }}
+        onGone={() => {
+          setDeleting(null);
+          void refreshEvents();
         }}
       />
 
-      <NewEventModal
-        open={creating}
-        onClose={() => setCreating(false)}
-        onCreated={async () => {
+      <EventFormModal
+        open={creating || !!editing}
+        event={editing}
+        timeIns={editing ? counts.get(editing.id) ?? 0 : 0}
+        onClose={() => {
           setCreating(false);
-          setFilter("all");
-          await refreshEvents();
+          setEditing(null);
+        }}
+        onSaved={(event, mode, changed) => {
+          setCreating(false);
+          setEditing(null);
+          putEvent(event);
+          setFilter(tabFor(event));
+          setNotice(
+            mode === "created"
+              ? `Created “${event.title}”${event.status === "published" ? " and published it" : " as a draft"}.`
+              : changed.length
+                ? `Saved changes to “${event.title}” (${changed.join(", ")}).`
+                : `No changes to “${event.title}”.`
+          );
+          void refreshEvents();
         }}
       />
     </>
@@ -223,11 +290,14 @@ function DeleteEventModal({
   timeIns,
   onClose,
   onDeleted,
+  onGone,
 }: {
   event: BAEvent | null;
   timeIns: number;
   onClose: () => void;
-  onDeleted: (title: string, recordsKept: number) => void;
+  onDeleted: (id: string, title: string, recordsKept: number) => void;
+  /** The event was already deleted elsewhere. */
+  onGone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -245,8 +315,9 @@ function DeleteEventModal({
     setError(null);
     try {
       const data = await api<{ recordsKept: number }>(`/api/events/${event.id}`, { method: "DELETE" });
-      onDeleted(event.title, data.recordsKept);
+      onDeleted(event.id, event.title, data.recordsKept);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return onGone();
       setError(e instanceof Error ? e.message : "Couldn't delete the event. Try again.");
       setBusy(false);
     }
@@ -310,121 +381,252 @@ function withOffset(local: string) {
   return `${local}:00${off >= 0 ? "+" : "-"}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
 }
 
-function defaults() {
+type FormValues = { title: string; description: string; venue: string; start: string; end: string; gracePeriodMins: string; publish: boolean };
+type FormErrors = Partial<Record<keyof FormValues | "form", string>>;
+
+function blankForm(): FormValues {
   const start = new Date();
   start.setMinutes(0, 0, 0);
   start.setHours(start.getHours() + 1);
   const end = new Date(start.getTime() + 3 * 3600000);
+  return { title: "", description: "", venue: "", start: localInput(start), end: localInput(end), gracePeriodMins: "15", publish: true };
+}
+
+function formFor(event: BAEvent): FormValues {
   return {
-    title: "",
-    description: "",
-    venue: "",
-    start: localInput(start),
-    end: localInput(end),
-    gracePeriodMins: "15",
-    publish: true,
+    title: event.title,
+    description: event.description,
+    venue: event.venue,
+    start: localInput(new Date(event.start_time)),
+    end: localInput(new Date(event.end_time)),
+    gracePeriodMins: String(event.sessions?.[0]?.grace_period_mins ?? 15),
+    publish: event.status === "published",
   };
 }
 
-type FormErrors = Partial<Record<keyof ReturnType<typeof defaults> | "form", string>>;
+const DESCRIPTION_MAX = 500;
 
-function NewEventModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: () => void }) {
-  const [f, setF] = useState(defaults);
+/**
+ * Creates an event, or edits one (`event` set), published or not. Validates
+ * with the same schemas as the API, so the form and the server never disagree.
+ */
+function EventFormModal({
+  open,
+  event,
+  timeIns,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  /** The event being edited; absent when creating. */
+  event?: BAEvent | null;
+  timeIns: number;
+  onClose: () => void;
+  onSaved: (event: BAEvent, mode: "created" | "updated", changed: string[]) => void;
+}) {
+  const editing = !!event;
+  const [f, setF] = useState<FormValues>(blankForm);
+  const [initial, setInitial] = useState<FormValues>(blankForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
 
-  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => {
+  // Fresh values each time the dialog opens (or switches to another event).
+  const scope = open ? (event?.id ?? "new") : null;
+  const [lastScope, setLastScope] = useState<string | null>(null);
+  if (scope !== lastScope) {
+    setLastScope(scope);
+    if (scope) {
+      const values = event ? formFor(event) : blankForm();
+      setF(values);
+      setInitial(values);
+      setErrors({});
+      setSaving(false);
+    }
+  }
+
+  const multiSession = (event?.sessions?.length ?? 0) > 1;
+  const dirty = (Object.keys(f) as (keyof FormValues)[]).some((k) => f[k] !== initial[k]);
+  const scheduleDirty = f.start !== initial.start || f.end !== initial.end || f.gracePeriodMins !== initial.gracePeriodMins;
+
+  const set = <K extends keyof FormValues>(k: K, v: FormValues[K]) => {
     setF((p) => ({ ...p, [k]: v }));
-    setErrors((e) => ({ ...e, [k]: undefined, form: undefined }));
+    setErrors((e) => (e[k] || e.form ? { ...e, [k]: undefined, form: undefined } : e));
   };
 
-  /** The same schema the API checks, so the form and the server never disagree. */
-  const payload = () => ({
-    title: f.title,
-    description: f.description,
-    venue: f.venue,
-    start: f.start ? withOffset(f.start) : "",
-    end: f.end ? withOffset(f.end) : "",
-    gracePeriodMins: f.gracePeriodMins.trim() === "" ? Number.NaN : Number(f.gracePeriodMins),
-    publish: f.publish,
-  });
+  /** Moving the start keeps the event's length, so the end never lands before it. */
+  const setStart = (next: string) => {
+    setF((p) => {
+      const prevStart = new Date(p.start).getTime();
+      const prevEnd = new Date(p.end).getTime();
+      const nextStart = new Date(next).getTime();
+      const keepLength = !!next && !Number.isNaN(prevStart) && !Number.isNaN(prevEnd) && !Number.isNaN(nextStart) && prevEnd > prevStart;
+      return { ...p, start: next, end: keepLength ? localInput(new Date(nextStart + (prevEnd - prevStart))) : p.end };
+    });
+    setErrors((e) => ({ ...e, start: undefined, end: undefined, form: undefined }));
+  };
+
+  const close = () => {
+    if (saving) return;
+    if (dirty && !window.confirm(editing ? "Discard your changes to this event?" : "Discard this new event?")) return;
+    onClose();
+  };
+
+  const validate = (): { data: Record<string, unknown> } | { errors: FormErrors } => {
+    const base = {
+      title: f.title,
+      description: f.description,
+      venue: f.venue,
+      start: f.start ? withOffset(f.start) : "",
+      end: f.end ? withOffset(f.end) : "",
+      gracePeriodMins: f.gracePeriodMins.trim() === "" ? Number.NaN : Number(f.gracePeriodMins),
+    };
+    if (!event) {
+      const r = eventInputSchema.safeParse({ ...base, publish: f.publish });
+      return r.success ? { data: r.data } : { errors: fieldErrors(r.error) };
+    }
+    const r = eventUpdateSchema.safeParse({ ...base, expectedUpdatedAt: event.updated_at });
+    if (!r.success) return { errors: fieldErrors(r.error) };
+    // Fixing a finished event's details is fine; moving its schedule into the past is not.
+    const timesMoved = f.start !== initial.start || f.end !== initial.end;
+    if (timesMoved && new Date(r.data.end).getTime() <= Date.now()) return { errors: { end: ENDED_MESSAGE } };
+    return { data: r.data };
+  };
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (saving) return;
-    const result = eventInputSchema.safeParse(payload());
-    if (!result.success) {
-      setErrors(fieldErrors(result.error));
+    if (editing && !dirty) return onClose();
+    const result = validate();
+    if ("errors" in result) {
+      setErrors(result.errors);
       requestAnimationFrame(() => document.querySelector<HTMLElement>('[role="dialog"] [aria-invalid="true"]')?.focus());
       return;
     }
     setErrors({});
     setSaving(true);
     try {
-      await api("/api/events", { method: "POST", json: result.data });
-      setF(defaults());
-      onCreated();
+      if (event) {
+        const res = await api<{ event: BAEvent; changed: string[] }>(`/api/events/${event.id}`, { method: "PUT", json: result.data });
+        onSaved(res.event, "updated", res.changed);
+      } else {
+        const res = await api<{ event: BAEvent }>("/api/events", { method: "POST", json: result.data });
+        onSaved(res.event, "created", []);
+      }
     } catch (err) {
       if (err instanceof ApiError) setErrors({ ...err.fieldErrors, form: Object.keys(err.fieldErrors).length ? undefined : err.message });
-      else setErrors({ form: "No connection to the server. Try again." });
-    } finally {
+      else setErrors({ form: "No connection to the server. Nothing was saved; try again." });
       setSaving(false);
     }
   };
 
+  const statusLabel = event ? (event.status === "published" ? "Published" : event.status === "cancelled" ? "Cancelled" : "Draft") : "";
+
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="New event" description="Time-in opens at the start and time-out opens near the end. Students who time in after the grace period are marked late.">
+    <Modal
+      open={open}
+      onClose={close}
+      size="lg"
+      title={editing ? "Edit event" : "New event"}
+      description={
+        event
+          ? `${statusLabel} · created by ${event.organizer_name ?? "staff"}`
+          : "Time-in opens at the start and time-out opens near the end. Students who time in after the grace period are marked late."
+      }
+    >
       <form onSubmit={submit} noValidate className="space-y-5">
         {errors.form && (
-          <p role="alert" className="rounded-lg bg-rose-soft px-3 py-2.5 text-sm font-medium text-rose">
+          <p role="alert" className="flex items-start gap-2 rounded-lg bg-rose-soft px-3 py-2.5 text-sm font-medium text-rose">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             {errors.form}
           </p>
         )}
+        {event?.status === "published" && (
+          <p className="flex items-start gap-2 rounded-lg bg-brand-tint px-3 py-2.5 text-sm text-brand-ink">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            This event is published. Students see your changes right away, and passes they already have keep working.
+          </p>
+        )}
+
         <Field label="Title" required maxLength={120} autoComplete="off" value={f.title} error={errors.title} onChange={(e) => set("title", e.target.value)} />
         <Field label="Venue" required maxLength={120} autoComplete="off" value={f.venue} error={errors.venue} onChange={(e) => set("venue", e.target.value)} />
         <TextAreaField
           label="Description"
           required
           rows={3}
-          maxLength={500}
+          maxLength={DESCRIPTION_MAX}
           placeholder="Topics, which year levels attend, and what students should bring."
           value={f.description}
           error={errors.description}
+          hint={`${f.description.trim().length}/${DESCRIPTION_MAX} characters`}
           onChange={(e) => set("description", e.target.value)}
         />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Starts" required type="datetime-local" value={f.start} error={errors.start} onChange={(e) => set("start", e.target.value)} />
-          <Field label="Ends" required type="datetime-local" value={f.end} error={errors.end} hint="Same day; split longer events." onChange={(e) => set("end", e.target.value)} />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            label="Grace period (min)"
-            required
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={120}
-            step={1}
-            value={f.gracePeriodMins}
-            error={errors.gracePeriodMins}
-            hint="Minutes after the start before a time-in counts as late."
-            onChange={(e) => set("gracePeriodMins", e.target.value)}
-          />
-        </div>
-        <label className="flex items-start gap-3 text-sm">
-          <input type="checkbox" checked={f.publish} onChange={(e) => set("publish", e.target.checked)} className="mt-0.5 h-4 w-4 accent-brand" />
-          <span>
-            <span className="font-medium">Publish now</span>
-            <span className="block text-muted">Students can generate passes for it straight away. Leave unticked to save a draft.</span>
-          </span>
-        </label>
-        <div className="flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onClose} className={btn.secondary}>
+
+        <fieldset className="space-y-4" disabled={multiSession || saving}>
+          <legend className="sr-only">Schedule</legend>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Starts"
+              required
+              type="datetime-local"
+              value={f.start}
+              error={errors.start}
+              onChange={(e) => setStart(e.target.value)}
+            />
+            <Field
+              label="Ends"
+              required
+              type="datetime-local"
+              min={f.start || undefined}
+              value={f.end}
+              error={errors.end}
+              hint="Same day. Moving the start keeps the length."
+              onChange={(e) => set("end", e.target.value)}
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Grace period (min)"
+              required
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={120}
+              step={1}
+              value={f.gracePeriodMins}
+              error={errors.gracePeriodMins}
+              hint="Minutes after the start before a time-in counts as late."
+              onChange={(e) => set("gracePeriodMins", e.target.value)}
+            />
+          </div>
+        </fieldset>
+        {multiSession && (
+          <p className="text-sm text-muted">This event has several sessions, so its schedule can’t be changed here. The title, venue and description can.</p>
+        )}
+        {editing && scheduleDirty && timeIns > 0 && (
+          <p className="flex items-start gap-2 rounded-lg bg-brass-soft px-3 py-2.5 text-sm font-medium text-brass">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            {plural(timeIns, "student")} already timed in. The new schedule applies to new scans; recorded scans keep their status.
+          </p>
+        )}
+
+        {!editing && (
+          <label className="flex items-start gap-3 text-sm">
+            <input type="checkbox" checked={f.publish} onChange={(e) => set("publish", e.target.checked)} className="mt-0.5 h-4 w-4 accent-brand" />
+            <span>
+              <span className="font-medium">Publish now</span>
+              <span className="block text-muted">Students can generate passes for it straight away. Leave unticked to save a draft.</span>
+            </span>
+          </label>
+        )}
+
+        <div className="flex flex-col-reverse gap-3 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-end">
+          {editing && !dirty && <span className="text-sm text-muted sm:mr-auto">No changes yet</span>}
+          <button type="button" onClick={close} disabled={saving} className={btn.secondary}>
             Cancel
           </button>
-          <button type="submit" disabled={saving} className={btn.primary}>
+          <button type="submit" disabled={saving || (editing && !dirty)} className={btn.primary}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-            {f.publish ? "Create and publish" : "Save draft"}
+            {saving ? "Saving…" : editing ? "Save changes" : f.publish ? "Create and publish" : "Save draft"}
           </button>
         </div>
       </form>

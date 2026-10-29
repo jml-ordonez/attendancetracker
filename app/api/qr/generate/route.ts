@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   if ("response" in parsed) return parsed.response;
   const { eventId, sessionId, student } = parsed.data;
 
-  const found = findSession(eventId, sessionId);
+  const found = await findSession(eventId, sessionId);
   if (!found || found.event.status !== "published") {
     return jsonError("This event is no longer open for attendance. Choose another event.", 404);
   }

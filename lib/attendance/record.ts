@@ -1,7 +1,7 @@
 import type { ScanVerificationResult, TokenPurpose } from "@/types/qr";
 import type { AttendanceScan } from "@/types/attendance";
 import { evaluateAttendance } from "@/lib/rules/attendance-rules";
-import { findSession } from "@/lib/events/store";
+import type { SessionMatch } from "@/lib/events/store";
 import { addScan, consumeToken, findScan } from "@/lib/attendance/store";
 
 /** How early before the time-in window a student may time in. */
@@ -43,6 +43,8 @@ export interface RecordAttendanceInput {
   student: ScanStudent;
   eventId: string;
   sessionId: string;
+  /** The event and session, looked up by the caller (`findSession`); null when they no longer exist. */
+  found: SessionMatch | null;
   purpose: TokenPurpose;
   officer: string;
   method: "qr" | "manual";
@@ -70,7 +72,8 @@ function fail(status: ScanVerificationResult["status"], message: string, student
  * and grace period, and records it.
  *
  * Synchronous on purpose: with no awaits between the duplicate check and the
- * insert, two scans of the same pass cannot both get through.
+ * insert, two scans of the same pass cannot both get through. That is why the
+ * caller looks the session up (async) and passes it in.
  */
 export function recordAttendance(input: RecordAttendanceInput): RecordAttendanceResult {
   const { student, officer, method } = input;
@@ -102,8 +105,8 @@ export function recordAttendance(input: RecordAttendanceInput): RecordAttendance
     return fail("TOKEN_INVALID", "This pass type is not accepted at the door.", student);
   }
 
-  const found = findSession(input.eventId, input.sessionId);
-  if (!found) return fail("SESSION_NOT_FOUND", "This event session no longer exists.", student);
+  const { found } = input;
+  if (!found || found.event.id !== input.eventId || found.session.id !== input.sessionId) return fail("SESSION_NOT_FOUND", "This event session no longer exists.", student);
   const { event, session } = found;
 
   if (event.status !== "published") {

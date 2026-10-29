@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { recordAttendance } from "@/lib/attendance/record";
 import { findScan } from "@/lib/attendance/store";
+import { findSession } from "@/lib/events/store";
 import { logAudit } from "@/lib/audit/store";
 import { clientIp, jsonError, parseBody, requireAdmin } from "@/lib/http";
 import {
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest) {
     student,
     eventId: v.eventId,
     sessionId: v.sessionId,
+    found: await findSession(v.eventId, v.sessionId),
     purpose: v.purpose,
     officer: admin.name,
     method: "manual",

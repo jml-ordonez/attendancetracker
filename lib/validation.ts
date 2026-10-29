@@ -142,34 +142,60 @@ const textSchema = (min: number, max: number, tooShort: string, tooLong: string)
     );
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Shortest event: time-in and time-out each need a window of their own. */
+export const MIN_EVENT_MINS = 15;
+export const ENDED_MESSAGE = "This time has already passed. Choose a later end.";
+
+const eventFields = {
+  title: textSchema(5, 120, "Enter a title of at least 5 characters.", "Keep the title under 120 characters."),
+  description: textSchema(10, 500, "Add a short description (at least 10 characters).", "Keep the description under 500 characters."),
+  venue: textSchema(3, 120, "Enter the venue (at least 3 characters).", "Keep the venue under 120 characters."),
+  start: z.iso.datetime({ offset: true, message: "Choose a start date and time." }),
+  end: z.iso.datetime({ offset: true, message: "Choose an end date and time." }),
+  gracePeriodMins: z
+    .number({ message: "Enter the grace period in minutes." })
+    .int("Enter whole minutes.")
+    .min(0, "Use 0 to 120 minutes.")
+    .max(120, "Use 0 to 120 minutes."),
+};
+
+/** Schedule rules shared by create and edit. `requireFuture`: the end can't already have passed. */
+function checkSchedule(
+  v: { start: string; end: string; gracePeriodMins: number },
+  ctx: z.RefinementCtx,
+  requireFuture: boolean
+) {
+  const start = new Date(v.start).getTime();
+  const end = new Date(v.end).getTime();
+  if (Number.isNaN(start) || Number.isNaN(end)) return;
+  if (end <= start) ctx.addIssue({ code: "custom", path: ["end"], message: "The end must be after the start." });
+  else if (end - start < MIN_EVENT_MINS * 60000)
+    ctx.addIssue({ code: "custom", path: ["end"], message: `Make the event at least ${MIN_EVENT_MINS} minutes long.` });
+  else if (end - start > DAY_MS) ctx.addIssue({ code: "custom", path: ["end"], message: "Split events longer than a day into separate events." });
+  else if (requireFuture && end <= Date.now()) ctx.addIssue({ code: "custom", path: ["end"], message: ENDED_MESSAGE });
+  else if (v.gracePeriodMins * 60000 >= end - start)
+    ctx.addIssue({ code: "custom", path: ["gracePeriodMins"], message: "The grace period must be shorter than the event." });
+}
 
 /** A new event, checked by the "New event" form and again by POST /api/events. */
 export const eventInputSchema = z
-  .object({
-    title: textSchema(5, 120, "Enter a title of at least 5 characters.", "Keep the title under 120 characters."),
-    description: textSchema(10, 500, "Add a short description (at least 10 characters).", "Keep the description under 500 characters."),
-    venue: textSchema(3, 120, "Enter the venue (at least 3 characters).", "Keep the venue under 120 characters."),
-    start: z.iso.datetime({ offset: true, message: "Choose a start date and time." }),
-    end: z.iso.datetime({ offset: true, message: "Choose an end date and time." }),
-    gracePeriodMins: z
-      .number({ message: "Enter the grace period in minutes." })
-      .int("Enter whole minutes.")
-      .min(0, "Use 0 to 120 minutes.")
-      .max(120, "Use 0 to 120 minutes."),
-    publish: z.boolean(),
-  })
-  .superRefine((v, ctx) => {
-    const start = new Date(v.start).getTime();
-    const end = new Date(v.end).getTime();
-    if (Number.isNaN(start) || Number.isNaN(end)) return;
-    if (end <= start) ctx.addIssue({ code: "custom", path: ["end"], message: "The end must be after the start." });
-    else if (end - start > DAY_MS) ctx.addIssue({ code: "custom", path: ["end"], message: "Split events longer than a day into separate events." });
-    else if (end <= Date.now()) ctx.addIssue({ code: "custom", path: ["end"], message: "This time has already passed. Choose a later end." });
-    else if (v.gracePeriodMins * 60000 >= end - start)
-      ctx.addIssue({ code: "custom", path: ["gracePeriodMins"], message: "The grace period must be shorter than the event." });
-  });
+  .object({ ...eventFields, publish: z.boolean() })
+  .superRefine((v, ctx) => checkSchedule(v, ctx, true));
+
+/**
+ * Changes to an existing event (PUT /api/events/:id). A past end is allowed so
+ * typos in finished events can be fixed; the route refuses moving the schedule
+ * into the past. `expectedUpdatedAt` is the version the editor started from.
+ */
+export const eventUpdateSchema = z
+  .object({ ...eventFields, expectedUpdatedAt: z.string().min(1).optional() })
+  .superRefine((v, ctx) => checkSchedule(v, ctx, false));
 
 export type EventInput = z.infer<typeof eventInputSchema>;
+export type EventUpdate = z.infer<typeof eventUpdateSchema>;
+
+/** Event ids are UUIDs; anything else is answered with 404 instead of reaching the database. */
+export const eventIdSchema = z.guid();
 
 export const purposeSchema = z.enum(["time_in", "time_out"], { message: "Choose time-in or time-out." });
 
